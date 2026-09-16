@@ -34,7 +34,7 @@ from pxr import Kind, Sdf, Usd, UsdGeom, Vt  # noqa: E402
 
 from usd_mesh import Looks, MeshWriter, author_attr, box_geom, cyl_geom  # noqa: E402
 
-LICENCE = 'Apache-2.0 (AIDC Studio original)'
+LICENCE = 'MIT (AIDC Studio original)'
 GENERATOR = 'tools/asset-pipeline/generic_usd.py'
 SPEC_FILE = 'tools/asset-pipeline/generic_spec.json'
 

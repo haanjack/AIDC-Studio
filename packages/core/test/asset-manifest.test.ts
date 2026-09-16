@@ -4,7 +4,7 @@ import { allowedModelFiles, allowedThumbnails, isRedistributableModel, type Asse
 
 const manifest: AssetManifest = {
   models: [
-    { name: 'helios', file: 'helios.glb', lod1: 'helios_lod1.glb', generated: true, license: 'Apache-2.0' },
+    { name: 'helios', file: 'helios.glb', lod1: 'helios_lod1.glb', generated: true, license: 'MIT' },
     { name: 'converted', file: 'converted.glb', lod1: 'converted_lod1.glb', sourceUsd: 'Library/Assets/x.usd' },
     { name: 'no-licence', file: 'nolic.glb', generated: true },
     { name: 'blank-licence', file: 'blank.glb', generated: true, license: '  ' },

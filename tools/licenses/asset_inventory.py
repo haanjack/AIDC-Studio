@@ -48,8 +48,8 @@ PACK_ROOT = PACK + '_BP'
 NV_EVAL = 'NVIDIA Sample Data License for Evaluation (v. Jan. 16, 2026) - NVIDIA reference blueprint content pack'
 NV_EVAL_URL = ('https://developer.download.nvidia.com/licenses/nvidia-sample-data-license-for-evaluation-2026.01.19.pdf'
                ' ; https://catalog.ngc.nvidia.com/orgs/nvidia/teams/omniverse/resources/' + PACK_L + '_dataset')
-APACHE = 'Apache-2.0 (AIDC Studio own work; project outbound licence)'
-APACHE_URL = 'https://www.apache.org/licenses/LICENSE-2.0'
+OUTBOUND = 'MIT (AIDC Studio own work; project outbound licence)'
+OUTBOUND_URL = 'https://opensource.org/license/mit'
 CC0_PH = 'CC0-1.0 (Poly Haven "Autumn Field (Pure Sky)", Sergej Majboroda / Jarod Guest) - copy obtained via the reference pack'
 CC0_URL = 'https://polyhaven.com/a/autumn_field_puresky ; https://polyhaven.com/license'
 NV_TM_URL = 'https://www.nvidia.com/en-us/about-nvidia/legal-info/'
@@ -192,13 +192,13 @@ def classify(rel: str, name: str) -> dict:
         d.update(category={'hdri': 'hdri-environment', 'thumbnail': 'image-render'}.get(kind, '3d-model' if kind.startswith('model') else 'usd-scene' if kind.startswith('usd') else kind),
                  source_type='own-generated-parametric' if own else 'downloaded-third-party (original source, sha256 pinned)',
                  source_detail=f"{cred.get('generator', '')} <- {cred.get('source', '') if isinstance(cred.get('source'), str) else cred.get('sourcePage', '')}",
-                 license_terms=APACHE if own else f"{cred.get('license')} ({cred.get('title')}, {', '.join(cred.get('authors', []))})",
-                 license_url=APACHE_URL if own else str(cred.get('licenseUrl') or cred.get('sourcePage') or ''),
+                 license_terms=OUTBOUND if own else f"{cred.get('license')} ({cred.get('title')}, {', '.join(cred.get('authors', []))})",
+                 license_url=OUTBOUND_URL if own else str(cred.get('licenseUrl') or cred.get('sourcePage') or ''),
                  redistribution_allowed='YES', attribution_needed='project NOTICE only' if own else 'not required by the licence (courtesy credit in NOTICE / CREDITS.json)',
                  risk='LOW', action='KEEP', evidence='CREDITS.json entry, sha256 match' + copy_note)
     elif in_assets and name in ('manifest.json', '_models_report.json') and not PACK_TEXT_RE.search(Path(rel).read_text(errors='replace')):
         d.update(category='asset-metadata', source_type='own-generated (index of own generated assets only)',
-                 source_detail='generic_manifest.py (shared manifest writer; refuses third-party paths)', license_terms=APACHE, license_url=APACHE_URL,
+                 source_detail='generic_manifest.py (shared manifest writer; refuses third-party paths)', license_terms=OUTBOUND, license_url=OUTBOUND_URL,
                  redistribution_allowed='YES', attribution_needed='no', risk='LOW', action='KEEP',
                  evidence='file content: no pack / Library / omniverse / cfd references' + copy_note)
     elif in_assets and sub.startswith('models/') and PACK_SRC_RE.match(name) and name.endswith('.glb'):
@@ -215,7 +215,7 @@ def classify(rel: str, name: str) -> dict:
     elif in_assets and sub.startswith('models/') and name.startswith('helios'):
         d.update(category='3d-model', source_type='own-generated-parametric',
                  source_detail='helios_build.py <- helios_spec.json (public dimensions/counts; colours read from AMD renders; no textures, no logos)',
-                 license_terms=APACHE, license_url=APACHE_URL, redistribution_allowed='YES',
+                 license_terms=OUTBOUND, license_url=OUTBOUND_URL, redistribution_allowed='YES',
                  attribution_needed='project NOTICE only; name "AMD Helios" is a third-party trademark (nominative use, add disclaimer)',
                  risk='LOW', action='KEEP (fix .gitignore: "assets/" pattern currently ignores it) + trademark disclaimer',
                  evidence='glTF extras.source=usd/Helios/Helios.usd; images=0; manifest license field' + copy_note)
@@ -235,7 +235,7 @@ def classify(rel: str, name: str) -> dict:
         if name.startswith('helios'):
             d.update(category='image-render', source_type='own-render-of-own-asset',
                      source_detail='render_thumbs.py (headless Chromium + three.js) of models/helios.glb',
-                     license_terms=APACHE, license_url=APACHE_URL, redistribution_allowed='YES', attribution_needed='no',
+                     license_terms=OUTBOUND, license_url=OUTBOUND_URL, redistribution_allowed='YES', attribution_needed='no',
                      risk='LOW', action='KEEP (fix .gitignore)', evidence='manifest thumbs map' + copy_note)
         else:
             d.update(category='image-render', source_type='render-of-derived-vendor-asset',
@@ -264,14 +264,14 @@ def classify(rel: str, name: str) -> dict:
     elif in_assets and sub.startswith('usd/Helios/'):
         d.update(category='usd-scene', source_type='own-generated-parametric',
                  source_detail='helios_usd.py <- helios_spec.json (aidc:* provenance attrs, aif:* SimReady-style schema names)',
-                 license_terms=APACHE + '; aif:* attribute names follow NVIDIA SimReady metadata spec (naming convention only)',
-                 license_url=APACHE_URL, redistribution_allowed='YES',
+                 license_terms=OUTBOUND + '; aif:* attribute names follow NVIDIA SimReady metadata spec (naming convention only)',
+                 license_url=OUTBOUND_URL, redistribution_allowed='YES',
                  attribution_needed='project NOTICE; "AMD", "Helios", "Instinct", "EPYC" trademarks in metadata (nominative)',
                  risk='LOW', action='KEEP (fix .gitignore) + trademark disclaimer', evidence=usda_meta(Path(rel)) + copy_note)
     elif rel == 'tools/asset-pipeline/helios_spec.json':
         d.update(category='asset-spec-data', source_type='own (compiled from public sources S1..S26)',
                  source_detail='docs/research/helios.md sources; facts + estimates, no copied text blocks beyond short labels',
-                 license_terms=APACHE, license_url=APACHE_URL, redistribution_allowed='YES', attribution_needed='cite sources (already in helios.md)',
+                 license_terms=OUTBOUND, license_url=OUTBOUND_URL, redistribution_allowed='YES', attribution_needed='cite sources (already in helios.md)',
                  risk='LOW', action='KEEP', evidence='file content')
     elif rel.startswith('apps/web/src/viewer/__screenshots__/'):
         d.update(category='screenshot', source_type='screenshot-of-own-app (depicts pack-derived models/CFD)',
@@ -286,7 +286,7 @@ def classify(rel: str, name: str) -> dict:
         if ext == '.svg':
             d.update(category='drawing-export', source_type='own-app-generated vector drawing',
                      source_detail='AIDC Studio 2D drawing sheet export (text + vectors; NVIDIA reference-POD layout names possible)',
-                     license_terms=APACHE, license_url=APACHE_URL, redistribution_allowed='YES (check sheet titles naming the NVIDIA reference blueprint)',
+                     license_terms=OUTBOUND, license_url=OUTBOUND_URL, redistribution_allowed='YES (check sheet titles naming the NVIDIA reference blueprint)',
                      attribution_needed='no', risk='LOW', action='KEEP or move to docs artefacts; rename blueprint-named sheet titles to "reference"',
                      evidence='no <image> elements')
         elif ext == '.pdf':
@@ -294,13 +294,13 @@ def classify(rel: str, name: str) -> dict:
             risky = not imgs.startswith('embedded_images=0')
             d.update(category='document-export', source_type='own-app-generated PDF (HeadlessChrome/Skia)',
                      source_detail='AIDC Studio design document / drawing print',
-                     license_terms=APACHE + ('; embedded raster images may be 3D views of pack-derived models' if risky else ''),
-                     license_url=APACHE_URL, redistribution_allowed='REVIEW' if risky else 'YES', attribution_needed='no',
+                     license_terms=OUTBOUND + ('; embedded raster images may be 3D views of pack-derived models' if risky else ''),
+                     license_url=OUTBOUND_URL, redistribution_allowed='REVIEW' if risky else 'YES', attribution_needed='no',
                      risk='MEDIUM' if risky else 'LOW',
                      action='REVIEW embedded images; exclude from public repo or regenerate after pack models are replaced' if risky else 'KEEP',
                      evidence=imgs)
         elif ext in ('.json', '.txt'):
-            d.update(category='qa-report', source_type='own', license_terms=APACHE, license_url=APACHE_URL,
+            d.update(category='qa-report', source_type='own', license_terms=OUTBOUND, license_url=OUTBOUND_URL,
                      redistribution_allowed='YES', attribution_needed='no', risk='LOW', action='KEEP or exclude with shots', evidence='')
         else:
             likely3d = bool(SHOT_3D_HINT.search(rel)) and not bool(SHOT_2D_HINT.search(rel))

@@ -5,7 +5,7 @@ import { Icon } from './icons.tsx';
 import webPkg from '../../package.json';
 
 /**
- * About dialog (neutralization stream N3): version, Apache-2.0 licence, link to the shipped third-party notices
+ * About dialog (neutralization stream N3): version, MIT licence, link to the shipped third-party notices
  * (public/THIRD_PARTY_NOTICES.txt → dist root), trademark / non-affiliation notice and asset credits read at runtime
  * from public/assets/CREDITS.json (optional; the section hides when the file is absent). Strings: 'about' namespace.
  */
@@ -17,9 +17,9 @@ export const useAbout = create<{ open: boolean; setOpen: (open: boolean) => void
 const BASE = import.meta.env.BASE_URL ?? '/';
 const NOTICES_URL = `${BASE}THIRD_PARTY_NOTICES.txt`;
 const CREDITS_URL = `${BASE}assets/CREDITS.json`;
-const APACHE_URL = 'https://www.apache.org/licenses/LICENSE-2.0';
+const MIT_URL = 'https://opensource.org/license/mit';
 
-/** AIDC Studio's own generated assets (CREDITS.json licence 'Apache-2.0 (AIDC Studio original)') are counted, not listed. */
+/** AIDC Studio's own generated assets (CREDITS.json licence 'MIT (AIDC Studio original)') are counted, not listed. */
 export const isOwnCredit = (c: AssetCredit): boolean => /AIDC Studio original/i.test(c.license ?? '');
 
 export interface AssetCredit {
@@ -110,7 +110,7 @@ export function AboutDialog() {
         <section data-about-section="license">
           <h3 style={{ fontSize: 13, margin: '6px 0 2px' }}>{t('about.license.title')}</h3>
           <div className="hint">{t('about.license.body')}</div>
-          <a href={APACHE_URL} target="_blank" rel="noopener noreferrer">{t('about.license.link')}</a>
+          <a href={MIT_URL} target="_blank" rel="noopener noreferrer">{t('about.license.link')}</a>
         </section>
 
         <section data-about-section="notices">

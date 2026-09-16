@@ -3,7 +3,7 @@
 
 Both files list ONLY assets AIDC Studio generates itself — the generic form-factor models of generic_build.py (EIA-310,
 21-inch OU and wide OU racks, CDU, CRAH / fan wall). The former vendor-shaped wide-rack entry (`helios`) was retired on
-2026-09-15 and is dropped when found. Every entry carries generated: true, licence 'Apache-2.0 (AIDC Studio original)',
+2026-09-15 and is dropped when found. Every entry carries generated: true, licence 'MIT (AIDC Studio original)',
 generator and source fields. Converted third-party entries (content-pack GLBs, reference CFD, the pack-collected sky HDR) and any
 source path into a third-party pack are dropped. The `thumbs` map only lists PNGs that exist for those models.
 
@@ -18,7 +18,7 @@ import re
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
-LICENCE = 'Apache-2.0 (AIDC Studio original)'
+LICENCE = 'MIT (AIDC Studio original)'
 OWN_NAME = re.compile(r'^generic_[a-z0-9_]+$')
 # retired content-pack prefix built from character codes (P6 term guard: the abbreviation lives in README.md only)
 _PACK = ''.join(map(chr, (100, 115, 120)))

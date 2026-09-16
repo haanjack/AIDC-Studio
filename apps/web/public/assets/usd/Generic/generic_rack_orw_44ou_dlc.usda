@@ -43,7 +43,7 @@ def Xform "GenericRack" (
     custom string aidc:layout = "rackscale-dlc-orw-44ou" (
         doc = "Wide OU rack liquid-cooled rack-scale configuration: 18 x 1 OU compute, 9 x 1 OU scale-up switch, 8 x 1 OU power shelves, 2 x 1 OU management"
     )
-    custom string aidc:licence = "Apache-2.0 (AIDC Studio original)" (
+    custom string aidc:licence = "MIT (AIDC Studio original)" (
         doc = "Licence of this generated asset"
     )
     custom int aidc:lod = 0 (

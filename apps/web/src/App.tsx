@@ -20,7 +20,7 @@ import { DocsPanel } from './panels/DocsPanel.tsx';
 import { CatalogPanel } from './panels/CatalogPanel.tsx';
 import { DrawingsPanel } from './panels/DrawingsPanel.tsx';
 import { HelpButton, HelpDrawer } from './ui/HelpDrawer.tsx';
-// neutralization N3: About dialog (version · Apache-2.0 · third-party notices · trademarks · asset credits)
+// neutralization N3: About dialog (version · MIT · third-party notices · trademarks · asset credits)
 import { AboutButton, AboutDialog } from './ui/AboutDialog.tsx';
 // v2 2차 contract slots (render nothing until T5 / T8 fill them)
 import { PanelCollapseButton, PanelCollapseHandle } from './ui/PanelCollapse.tsx';

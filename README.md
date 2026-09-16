@@ -196,6 +196,6 @@ The built-in collaboration model is intended for a small trusted LAN and does no
 
 ## Licence
 
-AIDC Studio is distributed under the [Apache License 2.0](LICENSE). You may use, modify, and distribute it, including commercially. Redistributions must include the licence and applicable [NOTICE](NOTICE) material, retain relevant attribution notices, and identify modified files as required by section 4. The software is provided “as is,” without warranties or conditions. Apache-2.0 does not grant rights to the AIDC Studio name or logo; see [TRADEMARKS.md](TRADEMARKS.md).
+AIDC Studio is distributed under the [MIT License](LICENSE). You may use, modify, merge, publish, distribute, sublicense, and sell copies, including commercially. Copies or substantial portions must retain the copyright and licence notice. The software is provided “as is,” without warranty. The licence does not grant rights to the AIDC Studio name or logo; see [TRADEMARKS.md](TRADEMARKS.md).
 
 Copyright 2026 haanjack

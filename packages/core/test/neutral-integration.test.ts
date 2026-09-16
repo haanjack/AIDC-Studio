@@ -62,7 +62,7 @@ describe('neutralization integration: catalog ↔ manifest ↔ files ↔ credits
     for (const a of credits.assets) {
       const buf = readFileSync(join(ASSETS, a.path));
       expect(createHash('sha256').update(buf).digest('hex'), a.path).toBe(a.sha256);
-      expect(a.license, a.path).toMatch(/^(Apache-2\.0 \(AIDC Studio original\)|CC0-1\.0)$/);
+      expect(a.license, a.path).toMatch(/^(MIT \(AIDC Studio original\)|CC0-1\.0)$/);
     }
   });
 });

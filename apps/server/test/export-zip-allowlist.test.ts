@@ -36,7 +36,7 @@ beforeAll(() => {
   for (const m of [...referencedModels(project), 'rogue.glb']) writeFileSync(join(models, m), Buffer.from(`glTF-fake-${m}`));
   writeFileSync(join(assets, 'manifest.json'), JSON.stringify({
     models: [
-      { name: 'helios', file: heliosGlb, generated: true, license: 'Apache-2.0' },
+      { name: 'helios', file: heliosGlb, generated: true, license: 'MIT' },
       ...referencedModels(project).filter((m) => m !== heliosGlb).map((m) => ({ name: m, file: m, sourceUsd: 'third-party/converted.usd' })),
       { name: 'rogue', file: 'rogue.glb', generated: true },
     ],

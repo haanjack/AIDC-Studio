@@ -27,9 +27,9 @@
       "authors": [
         "AIDC Studio"
       ],
-      "license": "Apache-2.0 (AIDC Studio original)",
-      "sha256": "21b2537c96ef365fa66d49afa23758ce8bab1172c34b07c8276f9f3ed06842e4",
-      "bytes": 502928,
+      "license": "MIT (AIDC Studio original)",
+      "sha256": "5a0e2c99df12171ccb34281cfa6b5b98e7313c6c0727502ca43515a4022b0029",
+      "bytes": 502920,
       "generator": "tools/asset-pipeline/generic_build.py",
       "source": "tools/asset-pipeline/generic_spec.json (parametric; no third-party input)",
       "generated": true,
@@ -42,9 +42,9 @@
       "authors": [
         "AIDC Studio"
       ],
-      "license": "Apache-2.0 (AIDC Studio original)",
-      "sha256": "a1810d46c7dd7d31699987b182d34f9e6e91fdafa4b9243c3fa5a51347984b39",
-      "bytes": 93504,
+      "license": "MIT (AIDC Studio original)",
+      "sha256": "d7863ca1abddbdb14bf5e7203214429a937e844dbbb667562e211b1369430010",
+      "bytes": 93496,
       "generator": "tools/asset-pipeline/generic_build.py",
       "source": "tools/asset-pipeline/generic_spec.json (parametric; no third-party input)",
       "generated": true,
@@ -57,9 +57,9 @@
       "authors": [
         "AIDC Studio"
       ],
-      "license": "Apache-2.0 (AIDC Studio original)",
-      "sha256": "9f3b46f104c9ab16b5ac4ec30b5c034a88b529f12d4d4cc7f6048d521cc06850",
-      "bytes": 94916,
+      "license": "MIT (AIDC Studio original)",
+      "sha256": "a952420dedd1bca308319e386f59211a1d24bc08390b500d4466c61c850ed805",
+      "bytes": 94909,
       "generator": "tools/asset-pipeline/generic_build.py",
       "source": "tools/asset-pipeline/generic_spec.json (parametric; no third-party input)",
       "generated": true,
@@ -72,9 +72,9 @@
       "authors": [
         "AIDC Studio"
       ],
-      "license": "Apache-2.0 (AIDC Studio original)",
-      "sha256": "fcf95e9050728d9b29135674a39e4003d25e2def6b4c790e9e690e0db9e0d6c6",
-      "bytes": 404682,
+      "license": "MIT (AIDC Studio original)",
+      "sha256": "7ad98a27334dd9f5ea958b12130d5361f5452d072c2a1ba1c9b23f3e816f2f77",
+      "bytes": 404675,
       "generator": "tools/asset-pipeline/generic_build.py",
       "source": "tools/asset-pipeline/generic_spec.json (parametric; no third-party input)",
       "generated": true,
@@ -87,7 +87,7 @@
       "authors": [
         "AIDC Studio"
       ],
-      "license": "Apache-2.0 (AIDC Studio original)",
+      "license": "MIT (AIDC Studio original)",
       "sha256": "a94f238093c4ddd9b9002a21e6fd95b4fb3f7dc616422da740053490a20fa51e",
       "bytes": 53361,
       "generator": "tools/asset-pipeline/generic_build.py",
@@ -102,9 +102,9 @@
       "authors": [
         "AIDC Studio"
       ],
-      "license": "Apache-2.0 (AIDC Studio original)",
-      "sha256": "21bcba04d666fe96e507cb3d9911a2a2fd452cfaa77d21548f22f5f6a1cc53dd",
-      "bytes": 411392,
+      "license": "MIT (AIDC Studio original)",
+      "sha256": "bf3085d107c768b6af4bb35812734587b234f12147c5ae21cc6de91ea09bb0a5",
+      "bytes": 411384,
       "generator": "tools/asset-pipeline/generic_build.py",
       "source": "tools/asset-pipeline/generic_spec.json (parametric; no third-party input)",
       "generated": true,
@@ -117,9 +117,9 @@
       "authors": [
         "AIDC Studio"
       ],
-      "license": "Apache-2.0 (AIDC Studio original)",
-      "sha256": "b1c674275407e8e1ca6bbb57963296408d653b883e46e3b3c4c2df805187ca3a",
-      "bytes": 74872,
+      "license": "MIT (AIDC Studio original)",
+      "sha256": "0d7e1488c005a5a062aa6c2633adae2322a11c59b8d88ad34d47be0deb664d1f",
+      "bytes": 74864,
       "generator": "tools/asset-pipeline/generic_build.py",
       "source": "tools/asset-pipeline/generic_spec.json (parametric; no third-party input)",
       "generated": true,
@@ -132,9 +132,9 @@
       "authors": [
         "AIDC Studio"
       ],
-      "license": "Apache-2.0 (AIDC Studio original)",
-      "sha256": "38b15857808b52a3b16a3c394d645bcfec4f5fe25371c8754c4f8f0f1b7cc7ee",
-      "bytes": 78918,
+      "license": "MIT (AIDC Studio original)",
+      "sha256": "0494fa5db2704e800ee1027c12c331e3f4349eab66e1c03f4ebcc2226dc1c960",
+      "bytes": 78911,
       "generator": "tools/asset-pipeline/generic_build.py",
       "source": "tools/asset-pipeline/generic_spec.json (parametric; no third-party input)",
       "generated": true,
@@ -147,9 +147,9 @@
       "authors": [
         "AIDC Studio"
       ],
-      "license": "Apache-2.0 (AIDC Studio original)",
-      "sha256": "d1ee3d44f38a0b25956aa7b2f0c63e2d9d01008b21d7831ef4800e37dea8f4e4",
-      "bytes": 326370,
+      "license": "MIT (AIDC Studio original)",
+      "sha256": "6e4c1d736b75780dd6307686500006656181f8c089fb947df538d1615f0fbe73",
+      "bytes": 326363,
       "generator": "tools/asset-pipeline/generic_build.py",
       "source": "tools/asset-pipeline/generic_spec.json (parametric; no third-party input)",
       "generated": true,
@@ -162,9 +162,84 @@
       "authors": [
         "AIDC Studio"
       ],
-      "license": "Apache-2.0 (AIDC Studio original)",
+      "license": "MIT (AIDC Studio original)",
       "sha256": "d481484e8f8a42859eb6d5b13a0f115532b083f5d53370077ddc2e0dc1d666bf",
       "bytes": 49810,
+      "generator": "tools/asset-pipeline/generic_build.py",
+      "source": "tools/asset-pipeline/generic_spec.json (parametric; no third-party input)",
+      "generated": true,
+      "modified": false
+    },
+    {
+      "path": "models/generic_rack_orw_44ou_dlc.glb",
+      "kind": "model",
+      "title": "generic_rack_orw_44ou_dlc \u2014 Generic wide OU rack, 44 OU (1200 x 1219 mm), liquid-cooled rack-scale configuration: 18 compute / 9 switch / 8 power trays, busbar at the datum depth, rear manifold, forklift base",
+      "authors": [
+        "AIDC Studio"
+      ],
+      "license": "MIT (AIDC Studio original)",
+      "sha256": "833eb24c0fadd23429181d3c00d16e38b4d01410750307da2e39e64ef944d5e5",
+      "bytes": 920476,
+      "generator": "tools/asset-pipeline/generic_build.py",
+      "source": "tools/asset-pipeline/generic_spec.json (parametric; no third-party input)",
+      "generated": true,
+      "modified": false
+    },
+    {
+      "path": "models/generic_rack_orw_44ou_dlc_lod1.glb",
+      "kind": "model-lod1",
+      "title": "generic_rack_orw_44ou_dlc \u2014 Generic wide OU rack, 44 OU (1200 x 1219 mm), liquid-cooled rack-scale configuration: 18 compute / 9 switch / 8 power trays, busbar at the datum depth, rear manifold, forklift base",
+      "authors": [
+        "AIDC Studio"
+      ],
+      "license": "MIT (AIDC Studio original)",
+      "sha256": "1514c0c3164aaeef903dc3965f41330099b345bd7ff517f3ae81eae508639571",
+      "bytes": 143736,
+      "generator": "tools/asset-pipeline/generic_build.py",
+      "source": "tools/asset-pipeline/generic_spec.json (parametric; no third-party input)",
+      "generated": true,
+      "modified": false
+    },
+    {
+      "path": "usd/Generic/generic_rack_orw_44ou_dlc.usd",
+      "kind": "usd",
+      "title": "generic_rack_orw_44ou_dlc \u2014 Generic wide OU rack, 44 OU (1200 x 1219 mm), liquid-cooled rack-scale configuration: 18 compute / 9 switch / 8 power trays, busbar at the datum depth, rear manifold, forklift base",
+      "authors": [
+        "AIDC Studio"
+      ],
+      "license": "MIT (AIDC Studio original)",
+      "sha256": "1a99766b668b86eacf00552c9aa175f577718f797e5762bfb8ab29eb7798c94b",
+      "bytes": 158870,
+      "generator": "tools/asset-pipeline/generic_build.py",
+      "source": "tools/asset-pipeline/generic_spec.json (parametric; no third-party input)",
+      "generated": true,
+      "modified": false
+    },
+    {
+      "path": "usd/Generic/generic_rack_orw_44ou_dlc.usda",
+      "kind": "usda",
+      "title": "generic_rack_orw_44ou_dlc \u2014 Generic wide OU rack, 44 OU (1200 x 1219 mm), liquid-cooled rack-scale configuration: 18 compute / 9 switch / 8 power trays, busbar at the datum depth, rear manifold, forklift base",
+      "authors": [
+        "AIDC Studio"
+      ],
+      "license": "MIT (AIDC Studio original)",
+      "sha256": "3c144355dafa8c063f979c338579180b139dc9487f834954287693afec33daf6",
+      "bytes": 648811,
+      "generator": "tools/asset-pipeline/generic_build.py",
+      "source": "tools/asset-pipeline/generic_spec.json (parametric; no third-party input)",
+      "generated": true,
+      "modified": false
+    },
+    {
+      "path": "thumbs/generic_rack_orw_44ou_dlc.png",
+      "kind": "thumbnail",
+      "title": "generic_rack_orw_44ou_dlc \u2014 Generic wide OU rack, 44 OU (1200 x 1219 mm), liquid-cooled rack-scale configuration: 18 compute / 9 switch / 8 power trays, busbar at the datum depth, rear manifold, forklift base",
+      "authors": [
+        "AIDC Studio"
+      ],
+      "license": "MIT (AIDC Studio original)",
+      "sha256": "b4aec1aa8108684228b7fdac4378840b944f09a9c23e49afe19d430a3e4e7728",
+      "bytes": 95838,
       "generator": "tools/asset-pipeline/generic_build.py",
       "source": "tools/asset-pipeline/generic_spec.json (parametric; no third-party input)",
       "generated": true,
@@ -177,9 +252,9 @@
       "authors": [
         "AIDC Studio"
       ],
-      "license": "Apache-2.0 (AIDC Studio original)",
-      "sha256": "4e37ff4f213cd048fec39146f834038d4a2500298817c650f2be00337b2ec914",
-      "bytes": 93780,
+      "license": "MIT (AIDC Studio original)",
+      "sha256": "04d1c8cac636231e3861a940ccffbe6879bec295bb76c5922528de45c4eecc96",
+      "bytes": 93776,
       "generator": "tools/asset-pipeline/generic_build.py",
       "source": "tools/asset-pipeline/generic_spec.json (parametric; no third-party input)",
       "generated": true,
@@ -192,9 +267,9 @@
       "authors": [
         "AIDC Studio"
       ],
-      "license": "Apache-2.0 (AIDC Studio original)",
-      "sha256": "fedd022f38903cc5eda9ba96e9146afa0549585c352258e9f065c926a2cca8cb",
-      "bytes": 38344,
+      "license": "MIT (AIDC Studio original)",
+      "sha256": "e0b5952ae13b421234e482233cc762af7c0b340ce0d5f925285ba89f2ed88785",
+      "bytes": 38340,
       "generator": "tools/asset-pipeline/generic_build.py",
       "source": "tools/asset-pipeline/generic_spec.json (parametric; no third-party input)",
       "generated": true,
@@ -207,9 +282,9 @@
       "authors": [
         "AIDC Studio"
       ],
-      "license": "Apache-2.0 (AIDC Studio original)",
-      "sha256": "7fadc9fb55fe65a6e657d191a3ce19dc9347280b781e75f1c444c8ffd0f0b07f",
-      "bytes": 22598,
+      "license": "MIT (AIDC Studio original)",
+      "sha256": "2895357247b8094f61146d52e1e63f2356c00434f8c935477fed1d35646081c4",
+      "bytes": 22591,
       "generator": "tools/asset-pipeline/generic_build.py",
       "source": "tools/asset-pipeline/generic_spec.json (parametric; no third-party input)",
       "generated": true,
@@ -222,9 +297,9 @@
       "authors": [
         "AIDC Studio"
       ],
-      "license": "Apache-2.0 (AIDC Studio original)",
-      "sha256": "8844121c8d095fb9f8868a7194c36420837cb62f9f0831f6e5f97bc8dcb8b680",
-      "bytes": 83308,
+      "license": "MIT (AIDC Studio original)",
+      "sha256": "e0a9de6963f3594ba59458a2bf7b99c5133f4707be8fc5203cadbeb0c634292c",
+      "bytes": 83301,
       "generator": "tools/asset-pipeline/generic_build.py",
       "source": "tools/asset-pipeline/generic_spec.json (parametric; no third-party input)",
       "generated": true,
@@ -237,7 +312,7 @@
       "authors": [
         "AIDC Studio"
       ],
-      "license": "Apache-2.0 (AIDC Studio original)",
+      "license": "MIT (AIDC Studio original)",
       "sha256": "98c918e69d6c00191137501e05472adc050b10afa436bdc15da3d6e6a9882f3e",
       "bytes": 29858,
       "generator": "tools/asset-pipeline/generic_build.py",
@@ -252,9 +327,9 @@
       "authors": [
         "AIDC Studio"
       ],
-      "license": "Apache-2.0 (AIDC Studio original)",
-      "sha256": "a19bb5f205d7418bce0ff2ce9958ef205321a518d6025efe0d9ea54b6c88fa88",
-      "bytes": 141416,
+      "license": "MIT (AIDC Studio original)",
+      "sha256": "f75afebc7ef5868126d50865037ee65fad5a3725719d5cca2795f529493767b3",
+      "bytes": 141412,
       "generator": "tools/asset-pipeline/generic_build.py",
       "source": "tools/asset-pipeline/generic_spec.json (parametric; no third-party input)",
       "generated": true,
@@ -267,9 +342,9 @@
       "authors": [
         "AIDC Studio"
       ],
-      "license": "Apache-2.0 (AIDC Studio original)",
-      "sha256": "1f427185b39748bca05cfbab210e583dc9955b18ec7576459b0d326bd6f65c43",
-      "bytes": 42988,
+      "license": "MIT (AIDC Studio original)",
+      "sha256": "36c5910d6da9b4612af79c61810164f1b15e496a27e9948eda74757fa6f91a99",
+      "bytes": 42984,
       "generator": "tools/asset-pipeline/generic_build.py",
       "source": "tools/asset-pipeline/generic_spec.json (parametric; no third-party input)",
       "generated": true,
@@ -282,9 +357,9 @@
       "authors": [
         "AIDC Studio"
       ],
-      "license": "Apache-2.0 (AIDC Studio original)",
-      "sha256": "c9474fc7ad33e1ab794eb170ff389e83ee44bebc62c5d7edb8862c33df591ed5",
-      "bytes": 29858,
+      "license": "MIT (AIDC Studio original)",
+      "sha256": "d849351506966f2ff93407cf4a8eaeb8e5ddcfbc6748f484bd67dd175055da31",
+      "bytes": 29851,
       "generator": "tools/asset-pipeline/generic_build.py",
       "source": "tools/asset-pipeline/generic_spec.json (parametric; no third-party input)",
       "generated": true,
@@ -297,9 +372,9 @@
       "authors": [
         "AIDC Studio"
       ],
-      "license": "Apache-2.0 (AIDC Studio original)",
-      "sha256": "127b03deb9d36c1234c8633c8c95c9730578841cc2436dcde4c9aaf2fec4b5ab",
-      "bytes": 109815,
+      "license": "MIT (AIDC Studio original)",
+      "sha256": "9fbcac43614324ab53949f452880c8680b694c8d600b8c3af060b9604cea0300",
+      "bytes": 109808,
       "generator": "tools/asset-pipeline/generic_build.py",
       "source": "tools/asset-pipeline/generic_spec.json (parametric; no third-party input)",
       "generated": true,
@@ -312,7 +387,7 @@
       "authors": [
         "AIDC Studio"
       ],
-      "license": "Apache-2.0 (AIDC Studio original)",
+      "license": "MIT (AIDC Studio original)",
       "sha256": "068a7643e0ff37db424595aa9ef9f19d70ffe0805404c79ec208221a9e89b6fd",
       "bytes": 31076,
       "generator": "tools/asset-pipeline/generic_build.py",
@@ -327,9 +402,9 @@
       "authors": [
         "AIDC Studio"
       ],
-      "license": "Apache-2.0 (AIDC Studio original)",
-      "sha256": "216a0f25f97252afcce0239b0109232a1627b00ba6a2d67694871d76fc8cfd4a",
-      "bytes": 194940,
+      "license": "MIT (AIDC Studio original)",
+      "sha256": "ac7349e9388f2f85aa6968881ea489d35176c9f38018e818724714daf27cffb8",
+      "bytes": 194932,
       "generator": "tools/asset-pipeline/generic_build.py",
       "source": "tools/asset-pipeline/generic_spec.json (parametric; no third-party input)",
       "generated": true,
@@ -342,9 +417,9 @@
       "authors": [
         "AIDC Studio"
       ],
-      "license": "Apache-2.0 (AIDC Studio original)",
-      "sha256": "1ffcbae75a75ab54e16dede83c94636bd0f2e27229d804b11f5623652cf86ec1",
-      "bytes": 41624,
+      "license": "MIT (AIDC Studio original)",
+      "sha256": "ca70308bfbdaa89c3c372f4380c545d19d62fdf99ef728fbd5f711fbcff754dd",
+      "bytes": 41616,
       "generator": "tools/asset-pipeline/generic_build.py",
       "source": "tools/asset-pipeline/generic_spec.json (parametric; no third-party input)",
       "generated": true,
@@ -357,9 +432,9 @@
       "authors": [
         "AIDC Studio"
       ],
-      "license": "Apache-2.0 (AIDC Studio original)",
-      "sha256": "16b7e9395bd570249330466035d2b13ce8111d41a63eebe9c5e97cd73d827349",
-      "bytes": 42892,
+      "license": "MIT (AIDC Studio original)",
+      "sha256": "122c91d977f4ffbdb8f3ae0b094ff1e5b7a2b67619f72d777f37a1fdff715709",
+      "bytes": 42885,
       "generator": "tools/asset-pipeline/generic_build.py",
       "source": "tools/asset-pipeline/generic_spec.json (parametric; no third-party input)",
       "generated": true,
@@ -372,9 +447,9 @@
       "authors": [
         "AIDC Studio"
       ],
-      "license": "Apache-2.0 (AIDC Studio original)",
-      "sha256": "ed785c978d156590da04170fbb49978cc03095cdad01f7faab3f51854acd4ba7",
-      "bytes": 159998,
+      "license": "MIT (AIDC Studio original)",
+      "sha256": "a6aee6883e6597b4203498e897564566e15e1f3365dc49342d0fcb8e7458d86c",
+      "bytes": 159991,
       "generator": "tools/asset-pipeline/generic_build.py",
       "source": "tools/asset-pipeline/generic_spec.json (parametric; no third-party input)",
       "generated": true,
@@ -387,7 +462,7 @@
       "authors": [
         "AIDC Studio"
       ],
-      "license": "Apache-2.0 (AIDC Studio original)",
+      "license": "MIT (AIDC Studio original)",
       "sha256": "62dd8b1f905d3b816139272e070d6f5f951294fa8351a9ac4643d8078b193fca",
       "bytes": 55201,
       "generator": "tools/asset-pipeline/generic_build.py",
@@ -402,9 +477,9 @@
       "authors": [
         "AIDC Studio"
       ],
-      "license": "Apache-2.0 (AIDC Studio original)",
-      "sha256": "74ac17179a9d1f1b5c1fb45798b1a50aa1b1592a843022f63d821dbcec9176c2",
-      "bytes": 246372,
+      "license": "MIT (AIDC Studio original)",
+      "sha256": "0f6e73f2b17229a31286880c5d74b399c42268b1b60b48ca571041d8964d1967",
+      "bytes": 246364,
       "generator": "tools/asset-pipeline/generic_build.py",
       "source": "tools/asset-pipeline/generic_spec.json (parametric; no third-party input)",
       "generated": true,
@@ -417,9 +492,9 @@
       "authors": [
         "AIDC Studio"
       ],
-      "license": "Apache-2.0 (AIDC Studio original)",
-      "sha256": "a730a874097549c43f323b31dfe124735d767f65214c218e9bd2353bdc079d89",
-      "bytes": 48104,
+      "license": "MIT (AIDC Studio original)",
+      "sha256": "c452ce77e91b508863fa70c3e2fe195e63fa7742b266f93bbbce1502e18aaece",
+      "bytes": 48100,
       "generator": "tools/asset-pipeline/generic_build.py",
       "source": "tools/asset-pipeline/generic_spec.json (parametric; no third-party input)",
       "generated": true,
@@ -432,9 +507,9 @@
       "authors": [
         "AIDC Studio"
       ],
-      "license": "Apache-2.0 (AIDC Studio original)",
-      "sha256": "0ba3449020240724bd311c87a10ca40f56a4a4c43ed0fb913a094d279b11cc14",
-      "bytes": 52350,
+      "license": "MIT (AIDC Studio original)",
+      "sha256": "c304adc0b33ede79963c4c2049da7616d38dddcb5c6c771ca12bb1f7088e293c",
+      "bytes": 52343,
       "generator": "tools/asset-pipeline/generic_build.py",
       "source": "tools/asset-pipeline/generic_spec.json (parametric; no third-party input)",
       "generated": true,
@@ -447,9 +522,9 @@
       "authors": [
         "AIDC Studio"
       ],
-      "license": "Apache-2.0 (AIDC Studio original)",
-      "sha256": "e1263c94f766be42f9c837501923a541093912859a196ddc37115cffd52a6a70",
-      "bytes": 201014,
+      "license": "MIT (AIDC Studio original)",
+      "sha256": "95b6846834fb3134b49ebe5fe39119fb1bd545b0fec6087b02fe656dd122fe41",
+      "bytes": 201007,
       "generator": "tools/asset-pipeline/generic_build.py",
       "source": "tools/asset-pipeline/generic_spec.json (parametric; no third-party input)",
       "generated": true,
@@ -462,7 +537,7 @@
       "authors": [
         "AIDC Studio"
       ],
-      "license": "Apache-2.0 (AIDC Studio original)",
+      "license": "MIT (AIDC Studio original)",
       "sha256": "ef1043711bbbd948eb67b2cd8a18370525c46433d7ba76de76c18cb4b6377a03",
       "bytes": 58933,
       "generator": "tools/asset-pipeline/generic_build.py",
@@ -477,9 +552,9 @@
       "authors": [
         "AIDC Studio"
       ],
-      "license": "Apache-2.0 (AIDC Studio original)",
-      "sha256": "27915abaff567c04b87a94651ab212568cd2fb9ff1f8ef57360481724e955a99",
-      "bytes": 257388,
+      "license": "MIT (AIDC Studio original)",
+      "sha256": "7326e444b09f3d28ad44ba09efa13d5971629f290a22bb0b22bb981b7074ed78",
+      "bytes": 257384,
       "generator": "tools/asset-pipeline/generic_build.py",
       "source": "tools/asset-pipeline/generic_spec.json (parametric; no third-party input)",
       "generated": true,
@@ -492,9 +567,9 @@
       "authors": [
         "AIDC Studio"
       ],
-      "license": "Apache-2.0 (AIDC Studio original)",
-      "sha256": "0d8a472c9bee522087630914368887573b78ddc8ffac81e2404b306dcf949628",
-      "bytes": 48104,
+      "license": "MIT (AIDC Studio original)",
+      "sha256": "609e965f7be9a0de549b84cfc16db710f81ff3c34d620e04517b5ddd9b898dba",
+      "bytes": 48096,
       "generator": "tools/asset-pipeline/generic_build.py",
       "source": "tools/asset-pipeline/generic_spec.json (parametric; no third-party input)",
       "generated": true,
@@ -507,9 +582,9 @@
       "authors": [
         "AIDC Studio"
       ],
-      "license": "Apache-2.0 (AIDC Studio original)",
-      "sha256": "b54ac6e6bab6a1f5d607accb510b446a2db26a34c84fdde0f70c11b67a956656",
-      "bytes": 53989,
+      "license": "MIT (AIDC Studio original)",
+      "sha256": "0e2ca9ff6f8f93f85ce5fb5b8c85ddfd581e8924b0388f840dccecaf57f6a671",
+      "bytes": 53982,
       "generator": "tools/asset-pipeline/generic_build.py",
       "source": "tools/asset-pipeline/generic_spec.json (parametric; no third-party input)",
       "generated": true,
@@ -522,9 +597,9 @@
       "authors": [
         "AIDC Studio"
       ],
-      "license": "Apache-2.0 (AIDC Studio original)",
-      "sha256": "a06d6a8b3320eeeeeddc0abafa2cc398d3527d025342b0479f09d2d0bb21344f",
-      "bytes": 204341,
+      "license": "MIT (AIDC Studio original)",
+      "sha256": "a82f02bf84244efac34bab592c5933f4b49cfc6b2056e41c7e6a262b54e0b342",
+      "bytes": 204334,
       "generator": "tools/asset-pipeline/generic_build.py",
       "source": "tools/asset-pipeline/generic_spec.json (parametric; no third-party input)",
       "generated": true,
@@ -537,7 +612,7 @@
       "authors": [
         "AIDC Studio"
       ],
-      "license": "Apache-2.0 (AIDC Studio original)",
+      "license": "MIT (AIDC Studio original)",
       "sha256": "f8117e6e7000b78980b330c435a1e4a066f6c52800d95d4722492540fe4032e1",
       "bytes": 48541,
       "generator": "tools/asset-pipeline/generic_build.py",
@@ -552,9 +627,9 @@
       "authors": [
         "AIDC Studio"
       ],
-      "license": "Apache-2.0 (AIDC Studio original)",
-      "sha256": "ce61d5826ebf0cc4e927d17cca642d09048966146027206e804a6aa5aa46bd8d",
-      "bytes": 395900,
+      "license": "MIT (AIDC Studio original)",
+      "sha256": "23ff78364d192a687d8d4fec01534d59ce05a299c667c5b6b01cbb774f02325f",
+      "bytes": 395892,
       "generator": "tools/asset-pipeline/generic_build.py",
       "source": "tools/asset-pipeline/generic_spec.json (parametric; no third-party input)",
       "generated": true,
@@ -567,9 +642,9 @@
       "authors": [
         "AIDC Studio"
       ],
-      "license": "Apache-2.0 (AIDC Studio original)",
-      "sha256": "21d0accc8735734a0090cd582687dcd99ef24456dc4d1c9feba0244f97f6782b",
-      "bytes": 72324,
+      "license": "MIT (AIDC Studio original)",
+      "sha256": "1b33ed6a6394d332c64658a0fddf6868aa72ae273d2d50efe881cacf64325e75",
+      "bytes": 72320,
       "generator": "tools/asset-pipeline/generic_build.py",
       "source": "tools/asset-pipeline/generic_spec.json (parametric; no third-party input)",
       "generated": true,
@@ -582,9 +657,9 @@
       "authors": [
         "AIDC Studio"
       ],
-      "license": "Apache-2.0 (AIDC Studio original)",
-      "sha256": "328a5e8749c5da516038038f433cbe8b57b0344c00a453d32db0f3c19f00b30a",
-      "bytes": 81828,
+      "license": "MIT (AIDC Studio original)",
+      "sha256": "46bcc2a1fcb837ea4dac995c01b26bb1cb1a96723b0ee2d3e5d9176b7c750fcf",
+      "bytes": 81821,
       "generator": "tools/asset-pipeline/generic_build.py",
       "source": "tools/asset-pipeline/generic_spec.json (parametric; no third-party input)",
       "generated": true,
@@ -597,9 +672,9 @@
       "authors": [
         "AIDC Studio"
       ],
-      "license": "Apache-2.0 (AIDC Studio original)",
-      "sha256": "35051fd1fbbf8a75168578a4d2db59fee7016c0750a36bba4bbb639247ba7d6f",
-      "bytes": 321235,
+      "license": "MIT (AIDC Studio original)",
+      "sha256": "e1fea7c035d2f18b4cc63e84da04704400e0ce1317ad9e72cb51ab45b7c34ba8",
+      "bytes": 321228,
       "generator": "tools/asset-pipeline/generic_build.py",
       "source": "tools/asset-pipeline/generic_spec.json (parametric; no third-party input)",
       "generated": true,
@@ -612,84 +687,9 @@
       "authors": [
         "AIDC Studio"
       ],
-      "license": "Apache-2.0 (AIDC Studio original)",
+      "license": "MIT (AIDC Studio original)",
       "sha256": "1efd229a6f9049cdbb510293fbe3e3bda6a9ae0dae0f607aa8e227001bec9ee3",
       "bytes": 71378,
-      "generator": "tools/asset-pipeline/generic_build.py",
-      "source": "tools/asset-pipeline/generic_spec.json (parametric; no third-party input)",
-      "generated": true,
-      "modified": false
-    },
-    {
-      "path": "models/generic_rack_orw_44ou_dlc.glb",
-      "kind": "model",
-      "title": "generic_rack_orw_44ou_dlc \u2014 Generic wide OU rack, 44 OU (1200 x 1219 mm), liquid-cooled rack-scale configuration: 18 compute / 9 switch / 8 power trays, busbar at the datum depth, rear manifold, forklift base",
-      "authors": [
-        "AIDC Studio"
-      ],
-      "license": "Apache-2.0 (AIDC Studio original)",
-      "sha256": "510b4559414ab5c944a2ba81794947d5d2bb5c5c17b91e0591da11e4cedf46a9",
-      "bytes": 920484,
-      "generator": "tools/asset-pipeline/generic_build.py",
-      "source": "tools/asset-pipeline/generic_spec.json (parametric; no third-party input)",
-      "generated": true,
-      "modified": false
-    },
-    {
-      "path": "models/generic_rack_orw_44ou_dlc_lod1.glb",
-      "kind": "model-lod1",
-      "title": "generic_rack_orw_44ou_dlc \u2014 Generic wide OU rack, 44 OU (1200 x 1219 mm), liquid-cooled rack-scale configuration: 18 compute / 9 switch / 8 power trays, busbar at the datum depth, rear manifold, forklift base",
-      "authors": [
-        "AIDC Studio"
-      ],
-      "license": "Apache-2.0 (AIDC Studio original)",
-      "sha256": "e8f467c9d5cf5aeeb122a23615fe42a6f20f41a1c5f5ad7cee1eca81f0810566",
-      "bytes": 143744,
-      "generator": "tools/asset-pipeline/generic_build.py",
-      "source": "tools/asset-pipeline/generic_spec.json (parametric; no third-party input)",
-      "generated": true,
-      "modified": false
-    },
-    {
-      "path": "usd/Generic/generic_rack_orw_44ou_dlc.usd",
-      "kind": "usd",
-      "title": "generic_rack_orw_44ou_dlc \u2014 Generic wide OU rack, 44 OU (1200 x 1219 mm), liquid-cooled rack-scale configuration: 18 compute / 9 switch / 8 power trays, busbar at the datum depth, rear manifold, forklift base",
-      "authors": [
-        "AIDC Studio"
-      ],
-      "license": "Apache-2.0 (AIDC Studio original)",
-      "sha256": "c1c1d730aba15b17e3a27f2900389940065c0412d8e33c53ecb7f0f74f98ba42",
-      "bytes": 158877,
-      "generator": "tools/asset-pipeline/generic_build.py",
-      "source": "tools/asset-pipeline/generic_spec.json (parametric; no third-party input)",
-      "generated": true,
-      "modified": false
-    },
-    {
-      "path": "usd/Generic/generic_rack_orw_44ou_dlc.usda",
-      "kind": "usda",
-      "title": "generic_rack_orw_44ou_dlc \u2014 Generic wide OU rack, 44 OU (1200 x 1219 mm), liquid-cooled rack-scale configuration: 18 compute / 9 switch / 8 power trays, busbar at the datum depth, rear manifold, forklift base",
-      "authors": [
-        "AIDC Studio"
-      ],
-      "license": "Apache-2.0 (AIDC Studio original)",
-      "sha256": "14aed487632fde5dfed1618e4dd7015d2551f08f6580b5c6f60ff57181f509ab",
-      "bytes": 648818,
-      "generator": "tools/asset-pipeline/generic_build.py",
-      "source": "tools/asset-pipeline/generic_spec.json (parametric; no third-party input)",
-      "generated": true,
-      "modified": false
-    },
-    {
-      "path": "thumbs/generic_rack_orw_44ou_dlc.png",
-      "kind": "thumbnail",
-      "title": "generic_rack_orw_44ou_dlc \u2014 Generic wide OU rack, 44 OU (1200 x 1219 mm), liquid-cooled rack-scale configuration: 18 compute / 9 switch / 8 power trays, busbar at the datum depth, rear manifold, forklift base",
-      "authors": [
-        "AIDC Studio"
-      ],
-      "license": "Apache-2.0 (AIDC Studio original)",
-      "sha256": "b4aec1aa8108684228b7fdac4378840b944f09a9c23e49afe19d430a3e4e7728",
-      "bytes": 95838,
       "generator": "tools/asset-pipeline/generic_build.py",
       "source": "tools/asset-pipeline/generic_spec.json (parametric; no third-party input)",
       "generated": true,

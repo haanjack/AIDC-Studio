@@ -1,7 +1,7 @@
 {
-  "generatedAt": "2026-09-15T11:08:33+00:00",
+  "generatedAt": "2026-09-16T09:38:43+00:00",
   "source": "AIDC Studio generated assets only (parametric, from public standards and public product information); no third-party models, textures, renders or simulation data",
-  "licence": "Apache-2.0 (AIDC Studio original)",
+  "licence": "MIT (AIDC Studio original)",
   "conventions": {
     "models": "glTF Y-up, meters, footprint centered at origin (XZ), base y=0, width X, depth Z, front faces -Z"
   },
@@ -12,8 +12,8 @@
       "lod1": "generic_cdu_1200x2400_lod1.glb",
       "triangles": 2770,
       "lod1Triangles": 776,
-      "bytes": 141416,
-      "lod1Bytes": 42988,
+      "bytes": 141412,
+      "lod1Bytes": 42984,
       "measuredDims": {
         "w": 1.2,
         "h": 2.62,
@@ -26,7 +26,7 @@
       "footprintFrom": "geometry bounds",
       "generated": true,
       "generator": "tools/asset-pipeline/generic_build.py",
-      "licence": "Apache-2.0 (AIDC Studio original)",
+      "licence": "MIT (AIDC Studio original)",
       "source": "parametric: tools/asset-pipeline/generic_spec.json (cdu); public standard facts listed in its \"sources\"",
       "kind": "cdu",
       "description": "Generic in-row CDU cabinet, 1200 mm frontage",
@@ -75,7 +75,7 @@
         }
       },
       "thumbnail": "thumbs/generic_cdu_1200x2400.png",
-      "license": "Apache-2.0 (AIDC Studio original)"
+      "license": "MIT (AIDC Studio original)"
     },
     {
       "name": "generic_cdu_900x2122",
@@ -83,8 +83,8 @@
       "lod1": "generic_cdu_900x2122_lod1.glb",
       "triangles": 1888,
       "lod1Triangles": 690,
-      "bytes": 93780,
-      "lod1Bytes": 38344,
+      "bytes": 93776,
+      "lod1Bytes": 38340,
       "measuredDims": {
         "w": 0.9,
         "h": 2.342,
@@ -97,7 +97,7 @@
       "footprintFrom": "geometry bounds",
       "generated": true,
       "generator": "tools/asset-pipeline/generic_build.py",
-      "licence": "Apache-2.0 (AIDC Studio original)",
+      "licence": "MIT (AIDC Studio original)",
       "source": "parametric: tools/asset-pipeline/generic_spec.json (cdu); public standard facts listed in its \"sources\"",
       "kind": "cdu",
       "description": "Generic in-row CDU cabinet, 900 mm frontage",
@@ -145,7 +145,7 @@
           "generic_cdu_900x2122_lod1.glb:rear": 0
         }
       },
-      "license": "Apache-2.0 (AIDC Studio original)",
+      "license": "MIT (AIDC Studio original)",
       "thumbnail": "thumbs/generic_cdu_900x2122.png"
     },
     {
@@ -154,8 +154,8 @@
       "lod1": "generic_crah_2515x1829_lod1.glb",
       "triangles": 3652,
       "lod1Triangles": 698,
-      "bytes": 194940,
-      "lod1Bytes": 41624,
+      "bytes": 194932,
+      "lod1Bytes": 41616,
       "measuredDims": {
         "w": 2.515,
         "h": 1.836,
@@ -168,7 +168,7 @@
       "footprintFrom": "geometry bounds",
       "generated": true,
       "generator": "tools/asset-pipeline/generic_build.py",
-      "licence": "Apache-2.0 (AIDC Studio original)",
+      "licence": "MIT (AIDC Studio original)",
       "source": "parametric: tools/asset-pipeline/generic_spec.json (crah); public standard facts listed in its \"sources\"",
       "kind": "crah",
       "description": "Generic perimeter CRAH, 2515 mm frontage",
@@ -219,7 +219,7 @@
         }
       },
       "thumbnail": "thumbs/generic_crah_2515x1829.png",
-      "license": "Apache-2.0 (AIDC Studio original)"
+      "license": "MIT (AIDC Studio original)"
     },
     {
       "name": "generic_crah_3050x3407",
@@ -227,8 +227,8 @@
       "lod1": "generic_crah_3050x3407_lod1.glb",
       "triangles": 4872,
       "lod1Triangles": 844,
-      "bytes": 257388,
-      "lod1Bytes": 48104,
+      "bytes": 257384,
+      "lod1Bytes": 48096,
       "measuredDims": {
         "w": 3.05,
         "h": 3.414,
@@ -241,7 +241,7 @@
       "footprintFrom": "geometry bounds",
       "generated": true,
       "generator": "tools/asset-pipeline/generic_build.py",
-      "licence": "Apache-2.0 (AIDC Studio original)",
+      "licence": "MIT (AIDC Studio original)",
       "source": "parametric: tools/asset-pipeline/generic_spec.json (crah); public standard facts listed in its \"sources\"",
       "kind": "crah",
       "description": "Generic large perimeter CRAH, 3050 mm frontage, tall",
@@ -292,7 +292,7 @@
         }
       },
       "thumbnail": "thumbs/generic_crah_3050x3407.png",
-      "license": "Apache-2.0 (AIDC Studio original)"
+      "license": "MIT (AIDC Studio original)"
     },
     {
       "name": "generic_crah_3099x2388",
@@ -300,8 +300,8 @@
       "lod1": "generic_crah_3099x2388_lod1.glb",
       "triangles": 4668,
       "lod1Triangles": 844,
-      "bytes": 246372,
-      "lod1Bytes": 48104,
+      "bytes": 246364,
+      "lod1Bytes": 48100,
       "measuredDims": {
         "w": 3.099,
         "h": 2.395,
@@ -314,7 +314,7 @@
       "footprintFrom": "geometry bounds",
       "generated": true,
       "generator": "tools/asset-pipeline/generic_build.py",
-      "licence": "Apache-2.0 (AIDC Studio original)",
+      "licence": "MIT (AIDC Studio original)",
       "source": "parametric: tools/asset-pipeline/generic_spec.json (crah); public standard facts listed in its \"sources\"",
       "kind": "crah",
       "description": "Generic perimeter CRAH, 3099 mm frontage",
@@ -365,7 +365,7 @@
         }
       },
       "thumbnail": "thumbs/generic_crah_3099x2388.png",
-      "license": "Apache-2.0 (AIDC Studio original)"
+      "license": "MIT (AIDC Studio original)"
     },
     {
       "name": "generic_fanwall_3600x3000",
@@ -373,8 +373,8 @@
       "lod1": "generic_fanwall_3600x3000_lod1.glb",
       "triangles": 7690,
       "lod1Triangles": 1396,
-      "bytes": 395900,
-      "lod1Bytes": 72324,
+      "bytes": 395892,
+      "lod1Bytes": 72320,
       "measuredDims": {
         "w": 3.6,
         "h": 3.007,
@@ -387,7 +387,7 @@
       "footprintFrom": "geometry bounds",
       "generated": true,
       "generator": "tools/asset-pipeline/generic_build.py",
-      "licence": "Apache-2.0 (AIDC Studio original)",
+      "licence": "MIT (AIDC Studio original)",
       "source": "parametric: tools/asset-pipeline/generic_spec.json (crah); public standard facts listed in its \"sources\"",
       "kind": "fan-wall",
       "description": "Generic fan-wall unit, 3600 mm frontage, two fan rows",
@@ -438,7 +438,7 @@
         }
       },
       "thumbnail": "thumbs/generic_fanwall_3600x3000.png",
-      "license": "Apache-2.0 (AIDC Studio original)"
+      "license": "MIT (AIDC Studio original)"
     },
     {
       "name": "generic_rack_eia48_dlc",
@@ -446,8 +446,8 @@
       "lod1": "generic_rack_eia48_dlc_lod1.glb",
       "triangles": 9116,
       "lod1Triangles": 1490,
-      "bytes": 502928,
-      "lod1Bytes": 93504,
+      "bytes": 502920,
+      "lod1Bytes": 93496,
       "measuredDims": {
         "w": 0.6,
         "h": 2.3,
@@ -460,7 +460,7 @@
       "footprintFrom": "geometry bounds",
       "generated": true,
       "generator": "tools/asset-pipeline/generic_build.py",
-      "licence": "Apache-2.0 (AIDC Studio original)",
+      "licence": "MIT (AIDC Studio original)",
       "source": "parametric: tools/asset-pipeline/generic_spec.json (rack); public standard facts listed in its \"sources\"",
       "kind": "rack",
       "description": "Generic 48 U EIA-310 liquid-cooled rack-scale GPU rack (compute / switch bands, 8 power shelves, rear busbar + manifold)",
@@ -519,7 +519,7 @@
         }
       },
       "thumbnail": "thumbs/generic_rack_eia48_dlc.png",
-      "license": "Apache-2.0 (AIDC Studio original)"
+      "license": "MIT (AIDC Studio original)"
     },
     {
       "name": "generic_rack_orv3_44ou_dlc",
@@ -527,8 +527,8 @@
       "lod1": "generic_rack_orv3_44ou_dlc_lod1.glb",
       "triangles": 7436,
       "lod1Triangles": 1160,
-      "bytes": 411392,
-      "lod1Bytes": 74872,
+      "bytes": 411384,
+      "lod1Bytes": 74864,
       "measuredDims": {
         "w": 0.6,
         "h": 2.3,
@@ -541,7 +541,7 @@
       "footprintFrom": "geometry bounds",
       "generated": true,
       "generator": "tools/asset-pipeline/generic_build.py",
-      "licence": "Apache-2.0 (AIDC Studio original)",
+      "licence": "MIT (AIDC Studio original)",
       "source": "parametric: tools/asset-pipeline/generic_spec.json (rack); public standard facts listed in its \"sources\"",
       "kind": "rack",
       "description": "Generic 21-inch OU rack, 44 OU, liquid-cooled (central power-shelf zone, rear 48 V busbar + manifold)",
@@ -600,7 +600,7 @@
         }
       },
       "thumbnail": "thumbs/generic_rack_orv3_44ou_dlc.png",
-      "license": "Apache-2.0 (AIDC Studio original)"
+      "license": "MIT (AIDC Studio original)"
     },
     {
       "name": "generic_rack_orw_44ou_dlc",
@@ -608,8 +608,8 @@
       "lod1": "generic_rack_orw_44ou_dlc_lod1.glb",
       "triangles": 16848,
       "lod1Triangles": 2420,
-      "bytes": 920484,
-      "lod1Bytes": 143744,
+      "bytes": 920476,
+      "lod1Bytes": 143736,
       "measuredDims": {
         "w": 1.2,
         "h": 2.39,
@@ -622,7 +622,7 @@
       "footprintFrom": "geometry bounds",
       "generated": true,
       "generator": "tools/asset-pipeline/generic_build.py",
-      "licence": "Apache-2.0 (AIDC Studio original)",
+      "licence": "MIT (AIDC Studio original)",
       "source": "parametric: tools/asset-pipeline/generic_spec.json (rack); public standard facts listed in its \"sources\"",
       "kind": "rack",
       "description": "Generic wide OU rack, 44 OU (1200 x 1219 mm), liquid-cooled rack-scale configuration: 18 compute / 9 switch / 8 power trays, busbar at the datum depth, rear manifold, forklift base",
@@ -680,7 +680,7 @@
           "generic_rack_orw_44ou_dlc_lod1.glb:rear": 0
         }
       },
-      "license": "Apache-2.0 (AIDC Studio original)",
+      "license": "MIT (AIDC Studio original)",
       "thumbnail": "thumbs/generic_rack_orw_44ou_dlc.png"
     }
   ],
@@ -690,7 +690,7 @@
       "spec": "tools/asset-pipeline/generic_spec.json",
       "generator": "tools/asset-pipeline/generic_build.py",
       "notes": "docs/research/neutral-N1b.md",
-      "builtAt": "2026-09-15T11:08:33+00:00"
+      "builtAt": "2026-09-16T09:38:43+00:00"
     }
   },
   "thumbs": {

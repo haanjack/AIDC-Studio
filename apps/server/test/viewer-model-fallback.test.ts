@@ -6,7 +6,7 @@ import { isModelAllowed, loadModelIndex, modelFileOf, setModelIndex } from '../.
 
 const manifest = {
   models: [
-    { name: 'helios', file: 'helios.glb', lod1: 'helios_lod1.glb', generated: true, license: 'Apache-2.0' },
+    { name: 'helios', file: 'helios.glb', lod1: 'helios_lod1.glb', generated: true, license: 'MIT' },
     { name: 'gb300', file: 'gb300.glb', lod1: 'gb300_lod1.glb', sourceUsd: 'third-party/legacy-rack.usd' },
   ],
 };

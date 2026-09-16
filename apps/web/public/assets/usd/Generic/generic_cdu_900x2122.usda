@@ -28,7 +28,7 @@ def Xform "GenericCDU" (
     custom string aidc:generator = "tools/asset-pipeline/generic_usd.py" (
         doc = "AIDC Studio generator"
     )
-    custom string aidc:licence = "Apache-2.0 (AIDC Studio original)" (
+    custom string aidc:licence = "MIT (AIDC Studio original)" (
         doc = "Licence of this generated asset"
     )
     custom int aidc:lod = 0 (

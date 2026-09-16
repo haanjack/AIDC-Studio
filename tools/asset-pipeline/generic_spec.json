@@ -1,7 +1,7 @@
 {
   "$schema_note": "Data-driven spec for the AIDC Studio generic equipment models (neutralization stream N1b, 2026-09-15). Models are keyed by STANDARD FORM FACTOR and configuration, never by vendor: no logos, lettering, card art, HMI screens or vendor trade dress. Tags on every number: standard (cited public standard fact) | catalog (taken from the AIDC catalog dims so the viewer fit is exact) | estimate (our own assumption). The OCP-standards design round reuses form_factors + layouts; generic_usd.py reads nothing else.",
   "version": "1.0.0",
-  "licence": "Apache-2.0 (AIDC Studio original)",
+  "licence": "MIT (AIDC Studio original)",
   "generator": "tools/asset-pipeline/generic_build.py",
 
   "sources": {
