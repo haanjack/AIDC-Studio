@@ -1,0 +1,52 @@
+AIDC Studio
+Copyright 2026 haanjack
+
+This product is licensed under the Apache License, Version 2.0 (see LICENSE).
+It is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+KIND, either express or implied (LICENSE sections 7 and 8).
+
+Third-party software
+--------------------
+This product includes third-party open-source software. Their copyright notices
+and licence texts are in THIRD_PARTY_NOTICES.md (source and container
+distributions) and in THIRD_PARTY_NOTICES.txt at the root of the built web
+application, which is linked from the application's About dialog.
+
+Web application bundle:
+  three, three-stdlib, stats.js, React, React DOM, scheduler,
+  use-sync-external-store, @react-three/fiber, @react-three/drei, its-fine,
+  react-use-measure, suspend-react, zustand, @babel/runtime, and the Vite /
+  rolldown runtime helpers - MIT License
+  postprocessing - zlib License
+  JSZip - dual-licensed MIT OR GPL-3.0-or-later; used under the MIT License only
+  pako (embedded in the JSZip browser build) - MIT License and zlib License
+  n8ao - CC0 1.0 Universal public-domain dedication (not ISC)
+  Turbo colormap lookup values (Anton Mikhailov, Copyright 2019 Google LLC),
+  sampled for the thermal colour scale - Apache License 2.0
+
+API server runtime (container image):
+  Fastify, @fastify/cors, @fastify/static, JSZip and their dependencies -
+  MIT, ISC, BSD-3-Clause, BlueOak-1.0.0 and zlib licences (full list in
+  THIRD_PARTY_NOTICES.md)
+  Node.js runtime (container base image) - MIT License and the licences of its
+  bundled components
+
+Assets
+------
+The sky environment map (env/sky_1k.hdr) is derived from "Autumn Field (Pure
+Sky)" by Sergej Majboroda and Jarod Guest, Poly Haven
+(https://polyhaven.com/a/autumn_field_puresky), CC0 1.0 Universal; resized for
+AIDC Studio. All other 3D models, USD files, thumbnails and textures were
+created for AIDC Studio (see apps/web/public/assets/CREDITS.json).
+
+This product does not include vendor-supplied 3D models, CFD data, logos,
+product photos, slides, manuals or other vendor documents, and it does not
+require any vendor content pack.
+
+Trademarks
+----------
+Company and product names used in AIDC Studio (for example NVIDIA, GB300,
+NVL72, AMD, Helios, Instinct, Vertiv, Liebert) are trademarks of their
+respective owners and are used only to identify compatible products. MLPerf is
+a registered trademark of MLCommons Association. AIDC Studio is not affiliated
+with, sponsored by or endorsed by any of them. See TRADEMARKS.md.

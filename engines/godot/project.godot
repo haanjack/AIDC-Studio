@@ -1,0 +1,20 @@
+; Engine configuration file.
+; AIDC Studio viewer — loads aidc.layout/1 exports.
+
+config_version=5
+
+[application]
+
+config/name="AIDC Studio Viewer"
+config/description="Visualize AIDC Studio data-center layouts (aidc.layout/1) in Godot 4."
+run/main_scene="res://main.tscn"
+config/features=PackedStringArray("4.4", "Forward Plus")
+
+[display]
+
+window/size/viewport_width=1600
+window/size/viewport_height=900
+
+[rendering]
+
+anti_aliasing/quality/msaa_3d=2

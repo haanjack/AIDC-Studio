@@ -1,0 +1,244 @@
+@@ collective-logs.synthetic.txt -- SYNTHETIC nccl-tests / rccl-tests stdout for parser tests (packages/core/test/eta.test.ts).
+@@ Lines starting with '@@' are annotations; everything between '-----8<-----' and '=====END SAMPLE=====' is the sample body.
+@@ All hosts, PIDs, bus ids, timings and bandwidths are invented; only the public output format of the open-source tools is reproduced.
+@@ Samples: #1 all_reduce_perf legacy format; #2 current format; #3 alltoall_perf multi-node; #4 unstable plateau; #5-#6 rccl-tests via srun --label.
+@@ 'expect' values come from a reference parser (out-of-place busbw = 8th whitespace token of a data row after stripping an optional 'N: ' srun label).
+@@ Generated 2026-09-15 by the neutralization stream N3 (replaces a file of logs copied from third-party GitHub issues; LICENSE-AUDIT M5).
+
+=====BEGIN SAMPLE 1 id=allreduce-2node-legacy tool=nccl-tests collective=all_reduce_perf=====
+@@system: SYNTHETIC. 2 nodes x 8 accelerators, 16 ranks (-g 1), legacy output format (no version/starting/concluded lines). Plateau busbw above the 8 x 50 GB/s NIC nominal: NOT a valid eta run (not-network-bound).
+@@expect: nrows=32; max_size=17179869184; oop_busbw_at_max=469.4; top3_sizes=[4294967296, 8589934592, 17179869184]; top3_oop_mean=468.12; top3_oop_min=466.84; footer_avg=139.56; max_rank_plus1=16; hosts_listed=2
+-----8<-----
+mpirun -np 16 -H node-a01:8,node-a02:8 -x NCCL_DEBUG=VERSION ./build/all_reduce_perf -b 8 -e 16G -f 2 -g 1
+# nThread 1 nGpus 1 minBytes 8 maxBytes 17179869184 step: 2(factor) warmup iters: 5 iters: 20 agg iters: 1 validation: 1 graph: 0
+#
+# Using devices
+#  Rank  0 Group  0 Pid   51000 on  node-a01 device  0 [0000:1a:00] Accelerator-X 80GB
+#  Rank  1 Group  0 Pid   51001 on  node-a01 device  1 [0000:2b:00] Accelerator-X 80GB
+#  Rank  2 Group  0 Pid   51002 on  node-a01 device  2 [0000:3c:00] Accelerator-X 80GB
+#  Rank  3 Group  0 Pid   51003 on  node-a01 device  3 [0000:4d:00] Accelerator-X 80GB
+#  Rank  4 Group  0 Pid   51004 on  node-a01 device  4 [0000:9a:00] Accelerator-X 80GB
+#  Rank  5 Group  0 Pid   51005 on  node-a01 device  5 [0000:ab:00] Accelerator-X 80GB
+#  Rank  6 Group  0 Pid   51006 on  node-a01 device  6 [0000:bc:00] Accelerator-X 80GB
+#  Rank  7 Group  0 Pid   51007 on  node-a01 device  7 [0000:cd:00] Accelerator-X 80GB
+#  Rank  8 Group  0 Pid   51008 on  node-a02 device  0 [0000:1a:00] Accelerator-X 80GB
+#  Rank  9 Group  0 Pid   51009 on  node-a02 device  1 [0000:2b:00] Accelerator-X 80GB
+#  Rank 10 Group  0 Pid   51010 on  node-a02 device  2 [0000:3c:00] Accelerator-X 80GB
+#  Rank 11 Group  0 Pid   51011 on  node-a02 device  3 [0000:4d:00] Accelerator-X 80GB
+#  Rank 12 Group  0 Pid   51012 on  node-a02 device  4 [0000:9a:00] Accelerator-X 80GB
+#  Rank 13 Group  0 Pid   51013 on  node-a02 device  5 [0000:ab:00] Accelerator-X 80GB
+#  Rank 14 Group  0 Pid   51014 on  node-a02 device  6 [0000:bc:00] Accelerator-X 80GB
+#  Rank 15 Group  0 Pid   51015 on  node-a02 device  7 [0000:cd:00] Accelerator-X 80GB
+#  NCCL version 2.99.0 (synthetic)
+#
+#                                                              out-of-place                       in-place
+#       size         count      type   redop    root     time   algbw   busbw #wrong     time   algbw   busbw #wrong
+#        (B)    (elements)                               (us)  (GB/s)  (GB/s)            (us)  (GB/s)  (GB/s)
+           8             2     float     sum      -1      1.5    0.01    0.01      0      1.5    0.01    0.01    N/A
+          16             4     float     sum      -1      3.0    0.01    0.01      0      3.0    0.01    0.01    N/A
+          32             8     float     sum      -1      6.0    0.01    0.01      0      6.0    0.01    0.01    N/A
+          64            16     float     sum      -1     12.0    0.01    0.01      0     12.0    0.01    0.01    N/A
+         128            32     float     sum      -1     24.0    0.01    0.01      0     24.0    0.01    0.01    N/A
+         256            64     float     sum      -1     48.0    0.01    0.01      0     48.0    0.01    0.01    N/A
+         512           128     float     sum      -1     96.0    0.01    0.01      0     96.0    0.01    0.01    N/A
+        1024           256     float     sum      -1    192.0    0.01    0.01      0    192.0    0.01    0.01    N/A
+        2048           512     float     sum      -1    128.0    0.02    0.03      0    128.0    0.02    0.03    N/A
+        4096          1024     float     sum      -1    128.0    0.03    0.06      0    128.0    0.03    0.06    N/A
+        8192          2048     float     sum      -1    139.6    0.06    0.11      0    139.6    0.06    0.11    N/A
+       16384          4096     float     sum      -1    133.6    0.12    0.23      0    133.6    0.12    0.23    N/A
+       32768          8192     float     sum      -1    133.6    0.25    0.46      0    133.6    0.25    0.46    N/A
+       65536         16384     float     sum      -1    135.0    0.49    0.91      0    133.6    0.49    0.92    N/A
+      131072         32768     float     sum      -1    135.8    0.97    1.81      0    135.0    0.97    1.82    N/A
+      262144         65536     float     sum      -1    133.9    1.96    3.67      0    133.6    1.96    3.68    N/A
+      524288        131072     float     sum      -1    135.0    3.88    7.28      0    135.6    3.87    7.25    N/A
+     1048576        262144     float     sum      -1    135.4    7.74   14.52      0    136.2    7.70   14.44    N/A
+     2097152        524288     float     sum      -1    138.1   15.18   28.47      0    138.6   15.13   28.37    N/A
+     4194304       1048576     float     sum      -1    142.6   29.41   55.14      0    143.1   29.30   54.94    N/A
+     8388608       2097152     float     sum      -1    150.3   55.82  104.67      0    149.4   56.15  105.28    N/A
+    16777216       4194304     float     sum      -1    170.7   98.26  184.24      0    170.0   98.71  185.09    N/A
+    33554432       8388608     float     sum      -1    212.8  157.67  295.63      0    213.2  157.41  295.15    N/A
+    67108864      16777216     float     sum      -1    310.9  215.87  404.75      0    312.1  215.03  403.18    N/A
+   134217728      33554432     float     sum      -1    542.4  247.47  464.00      0    542.7  247.32  463.72    N/A
+   268435456      67108864     float     sum      -1   1075.3  249.63  468.05      0   1074.2  249.90  468.57    N/A
+   536870912     134217728     float     sum      -1   2156.9  248.91  466.70      0   2152.6  249.40  467.63    N/A
+  1073741824     268435456     float     sum      -1   4314.3  248.88  466.65      0   4300.3  249.69  468.17    N/A
+  2147483648     536870912     float     sum      -1   8652.0  248.21  465.39      0   8623.8  249.02  466.91    N/A
+  4294967296    1073741824     float     sum      -1    17250  248.98  466.84      0    17296  248.31  465.59    N/A
+  8589934592    2147483648     float     sum      -1    34406  249.66  468.12      0    34342  250.13  468.99    N/A
+ 17179869184    4294967296     float     sum      -1    68624  250.35  469.40      0    68642  250.28  469.28    N/A
+# Out of bounds values : 0 OK
+# Avg bus bandwidth    : 139.56
+#
+=====END SAMPLE=====
+
+=====BEGIN SAMPLE 2 id=alltoall-1node-current tool=nccl-tests collective=alltoall_perf=====
+@@system: SYNTHETIC. 1 node x 4 accelerators, current output format (nccl-tests version / Collective test starting / concluded lines), sizes stepped in bytes. Intra-node only: format sample, not a network eta run.
+@@expect: nrows=25; max_size=549453824; oop_busbw_at_max=293.53; top3_sizes=[547356672, 548405248, 549453824]; top3_oop_mean=292.73; top3_oop_min=291.15; footer_avg=311.137; max_rank_plus1=4; hosts_listed=1
+-----8<-----
+mpirun -np 4 --map-by ppr:4:node -x NCCL_ALGO=Ring -x NCCL_PROTO=Simple ./build/alltoall_perf -b 500M -e 524M -g 1 -n 10 -w 1
+
+# nccl-tests version 2.17.9 nccl-headers=22899 nccl-library=22899 (synthetic)
+# Collective test starting: alltoall_perf
+# nThread 1 nGpus 1 minBytes 524288000 maxBytes 549453824 step: 1048576(bytes) warmup iters: 1 iters: 20 agg iters: 1 validation: 1 graph: 0
+#
+# Using devices
+#  Rank  0 Group  0 Pid    7300 on  node-b01 device  0 [0000:1a:00] Accelerator-X 80GB
+#  Rank  1 Group  0 Pid    7301 on  node-b01 device  1 [0000:2b:00] Accelerator-X 80GB
+#  Rank  2 Group  0 Pid    7302 on  node-b01 device  2 [0000:3c:00] Accelerator-X 80GB
+#  Rank  3 Group  0 Pid    7303 on  node-b01 device  3 [0000:4d:00] Accelerator-X 80GB
+#
+#                                                              out-of-place                       in-place
+#       size         count      type   redop    root     time   algbw   busbw #wrong     time   algbw   busbw #wrong
+#        (B)    (elements)                               (us)  (GB/s)  (GB/s)            (us)  (GB/s)  (GB/s)
+   524288000      32768000     float    none      -1   1168.7  448.60  336.45      0   1175.6  445.99  334.49    N/A
+   525336576      32833536     float    none      -1   1171.2  448.53  336.40      0   1175.6  446.87  335.15    N/A
+   526385152      32899072     float    none      -1   1180.3  445.97  334.48      0   1186.2  443.77  332.83    N/A
+   527433728      32964608     float    none      -1   1187.7  444.07  333.05      0   1185.7  444.84  333.63    N/A
+   528482304      33030144     float    none      -1   1184.9  446.03  334.52      0   1185.9  445.63  334.22    N/A
+   529530880      33095680     float    none      -1   1192.6  444.00  333.00      0   1195.3  443.03  332.27    N/A
+   530579456      33161216     float    none      -1   1199.4  442.36  331.77      0   1197.8  442.97  332.23    N/A
+   531628032      33226752     float    none      -1   1188.3  447.39  335.54      0   1187.0  447.89  335.92    N/A
+   532676608      33292288     float    none      -1   1197.3  444.89  333.67      0   1200.4  443.75  332.81    N/A
+   533725184      33357824     float    none      -1   1205.1  442.91  332.18      0   1205.4  442.79  332.09    N/A
+   534773760      33423360     float    none      -1   1207.0  443.07  332.30      0   1204.5  443.99  332.99    N/A
+   535822336      33488896     float    none      -1   1207.9  443.60  332.70      0   1210.5  442.65  331.99    N/A
+   536870912      33554432     float    none      -1   1198.7  447.89  335.92      0   1191.7  450.52  337.89    N/A
+   537919488      33619968     float    none      -1   1378.3  390.28  292.71      0   1381.3  389.44  292.08    N/A
+   538968064      33685504     float    none      -1   1373.6  392.39  294.29      0   1378.5  390.97  293.23    N/A
+   540016640      33751040     float    none      -1   1386.4  389.52  292.14      0   1385.9  389.64  292.23    N/A
+   541065216      33816576     float    none      -1   1383.8  390.99  293.24      0   1390.2  389.20  291.90    N/A
+   542113792      33882112     float    none      -1   1382.2  392.21  294.16      0   1388.9  390.32  292.74    N/A
+   543162368      33947648     float    none      -1   1388.4  391.21  293.41      0   1387.9  391.35  293.51    N/A
+   544210944      34013184     float    none      -1   1396.8  389.61  292.21      0   1394.1  390.36  292.77    N/A
+   545259520      34078720     float    none      -1   1403.2  388.59  291.44      0   1411.3  386.35  289.76    N/A
+   546308096      34144256     float    none      -1   1397.4  390.96  293.22      0   1393.4  392.07  294.05    N/A
+   547356672      34209792     float    none      -1   1410.0  388.20  291.15      0   1413.4  387.25  290.44    N/A
+   548405248      34275328     float    none      -1   1401.3  391.35  293.51      0   1393.7  393.48  295.11    N/A
+   549453824      34340864     float    none      -1   1403.9  391.37  293.53      0   1402.4  391.80  293.85    N/A
+# Out of bounds values : 0 OK
+# Avg bus bandwidth    : 311.137 
+#
+# Collective test concluded: alltoall_perf
+#
+=====END SAMPLE=====
+
+=====BEGIN SAMPLE 3 id=alltoall-8node-legacy tool=nccl-tests collective=alltoall_perf=====
+@@system: SYNTHETIC. 8 nodes x 8 accelerators, 8 x 400 Gb/s NICs per node, -b 8M -e 16G -f 2 -g 1. Rank list truncated ('......'); no footer lines.
+@@expect: nrows=12; max_size=17179869184; oop_busbw_at_max=53.29; top3_sizes=[4294967296, 8589934592, 17179869184]; top3_oop_mean=52.093; top3_oop_min=50.62; footer_avg=None; max_rank_plus1=64; hosts_listed=2
+-----8<-----
+# nThread 1 nGpus 1 minBytes 8388608 maxBytes 17179869184 step: 2(factor) warmup iters: 5 iters: 20 agg iters: 1 validation: 1 graph: 0
+#
+# Using devices
+#  Rank  0 Group  0 Pid   30400 on  node-c01 device  0 [0000:1a:00] Accelerator-X 80GB
+#  Rank  1 Group  0 Pid   30401 on  node-c01 device  1 [0000:2b:00] Accelerator-X 80GB
+#  Rank  2 Group  0 Pid   30402 on  node-c01 device  2 [0000:3c:00] Accelerator-X 80GB
+......
+#  Rank 61 Group  0 Pid   30461 on  node-c08 device  5 [0000:ab:00] Accelerator-X 80GB
+#  Rank 62 Group  0 Pid   30462 on  node-c08 device  6 [0000:bc:00] Accelerator-X 80GB
+#  Rank 63 Group  0 Pid   30463 on  node-c08 device  7 [0000:cd:00] Accelerator-X 80GB
+#
+#                                                              out-of-place                       in-place
+#       size         count      type   redop    root     time   algbw   busbw #wrong     time   algbw   busbw #wrong
+#        (B)    (elements)                               (us)  (GB/s)  (GB/s)            (us)  (GB/s)  (GB/s)
+     8388608         32768     float    none      -1    342.6   24.48   24.10      0    344.6   24.34   23.96    N/A
+    16777216         65536     float    none      -1    506.6   33.12   32.60      0    508.6   32.99   32.47    N/A
+    33554432        131072     float    none      -1    963.0   34.84   34.30      0    964.1   34.80   34.26    N/A
+    67108864        262144     float    none      -1   1729.3   38.81   38.20      0   1736.1   38.65   38.05    N/A
+   134217728        524288     float    none      -1   3270.3   41.04   40.40      0   3273.6   41.00   40.36    N/A
+   268435456       1048576     float    none      -1   6130.9   43.78   43.10      0   6153.7   43.62   42.94    N/A
+   536870912       2097152     float    none      -1    12011   44.70   44.00      0    11976   44.83   44.13    N/A
+  1073741824       4194304     float    none      -1    23699   45.31   44.60      0    23577   45.54   44.83    N/A
+  2147483648       8388608     float    none      -1    46055   46.63   45.90      0    45885   46.80   46.07    N/A
+  4294967296      16777216     float    none      -1    83522   51.42   50.62      0    83144   51.66   50.85    N/A
+  8589934592      33554432     float    none      -1   161461   53.20   52.37      0   160663   53.47   52.63    N/A
+ 17179869184      67108864     float    none      -1   317347   54.14   53.29      0   317109   54.18   53.33    N/A
+=====END SAMPLE=====
+
+=====BEGIN SAMPLE 4 id=alltoall-16node-legacy tool=nccl-tests collective=alltoall_perf=====
+@@system: SYNTHETIC. 16 nodes x 8 accelerators, same command as the 8-node sample. Non-monotonic dip at 1-2 GiB (the plateau check must flag it).
+@@expect: nrows=12; max_size=17179869184; oop_busbw_at_max=50.13; top3_sizes=[4294967296, 8589934592, 17179869184]; top3_oop_mean=47.833; top3_oop_min=45.35; footer_avg=None; max_rank_plus1=128; hosts_listed=2
+-----8<-----
+# nThread 1 nGpus 1 minBytes 8388608 maxBytes 17179869184 step: 2(factor) warmup iters: 5 iters: 20 agg iters: 1 validation: 1 graph: 0
+#
+# Using devices
+#  Rank  0 Group  0 Pid   18800 on  node-d01 device  0 [0000:1a:00] Accelerator-X 80GB
+#  Rank  1 Group  0 Pid   18801 on  node-d01 device  1 [0000:2b:00] Accelerator-X 80GB
+#  Rank  2 Group  0 Pid   18802 on  node-d01 device  2 [0000:3c:00] Accelerator-X 80GB
+......
+#  Rank 125 Group  0 Pid   18925 on  node-d16 device  5 [0000:ab:00] Accelerator-X 80GB
+#  Rank 126 Group  0 Pid   18926 on  node-d16 device  6 [0000:bc:00] Accelerator-X 80GB
+#  Rank 127 Group  0 Pid   18927 on  node-d16 device  7 [0000:cd:00] Accelerator-X 80GB
+#
+#                                                              out-of-place                       in-place
+#       size         count      type   redop    root     time   algbw   busbw #wrong     time   algbw   busbw #wrong
+#        (B)    (elements)                               (us)  (GB/s)  (GB/s)            (us)  (GB/s)  (GB/s)
+     8388608         16384     float    none      -1    990.8    8.47    8.40      0    994.4    8.44    8.37    N/A
+    16777216         32768     float    none      -1    590.3   28.42   28.20      0    592.6   28.31   28.09    N/A
+    33554432         65536     float    none      -1   1005.8   33.36   33.10      0   1001.9   33.49   33.23    N/A
+    67108864        131072     float    none      -1   1854.7   36.18   35.90      0   1853.7   36.20   35.92    N/A
+   134217728        262144     float    none      -1   2952.8   45.46   45.10      0   2954.7   45.42   45.07    N/A
+   268435456        524288     float    none      -1   5502.9   48.78   48.40      0   5471.2   49.06   48.68    N/A
+   536870912       1048576     float    none      -1    10675   50.29   49.90      0    10686   50.24   49.85    N/A
+  1073741824       2097152     float    none      -1    24103   44.55   44.20      0    24021   44.70   44.35    N/A
+  2147483648       4194304     float    none      -1    59851   35.88   35.60      0    59500   36.09   35.81    N/A
+  4294967296       8388608     float    none      -1    93967   45.71   45.35      0    93905   45.74   45.38    N/A
+  8589934592      16777216     float    none      -1   177485   48.40   48.02      0   176859   48.57   48.19    N/A
+ 17179869184      33554432     float    none      -1   340029   50.52   50.13      0   338006   50.83   50.43    N/A
+=====END SAMPLE=====
+
+=====BEGIN SAMPLE 5 id=allgather-rccl-srun tool=rccl-tests collective=all_gather_perf=====
+@@system: SYNTHETIC. 4 nodes x 8 accelerator ranks launched with srun --nodes=4 --ntasks-per-node=8 --label (' 0: ' prefix); header/device lines not included; rccl-tests footer line.
+@@expect: nrows=17; max_size=4294967296; oop_busbw_at_max=92.48; top3_sizes=[1073741824, 2147483648, 4294967296]; top3_oop_mean=92.23; top3_oop_min=92.0; footer_avg=37.9021; max_rank_plus1=None; hosts_listed=0
+-----8<-----
+ 0: #       size         count      type   redop    root     time   algbw   busbw #wrong     time   algbw   busbw #wrong
+ 0: #        (B)    (elements)                               (us)  (GB/s)  (GB/s)            (us)  (GB/s)  (GB/s)
+ 0:        65536           512     float    none      -1    705.4    0.09    0.09      0    705.4    0.09    0.09    0
+ 0:       131072          1024     float    none      -1    705.4    0.19    0.18      0    705.4    0.19    0.18    0
+ 0:       262144          2048     float    none      -1    705.4    0.37    0.36      0    705.4    0.37    0.36    0
+ 0:       524288          4096     float    none      -1    705.4    0.74    0.72      0    705.4    0.74    0.72    0
+ 0:      1048576          8192     float    none      -1    715.4    1.47    1.42      0    720.4    1.46    1.41    0
+ 0:      2097152         16384     float    none      -1    717.9    2.92    2.83      0    720.4    2.91    2.82    0
+ 0:      4194304         32768     float    none      -1    725.6    5.78    5.60      0    723.0    5.80    5.62    0
+ 0:      8388608         65536     float    none      -1    748.3   11.21   10.86      0    744.9   11.26   10.91    0
+ 0:     16777216        131072     float    none      -1    795.5   21.09   20.43      0    795.2   21.10   20.44    0
+ 0:     33554432        262144     float    none      -1    898.2   37.36   36.19      0    896.0   37.45   36.28    0
+ 0:     67108864        524288     float    none      -1   1112.5   60.33   58.44      0   1109.4   60.49   58.60    0
+ 0:    134217728       1048576     float    none      -1   1629.8   82.35   79.78      0   1638.2   81.93   79.37    0
+ 0:    268435456       2097152     float    none      -1   2879.8   93.21   90.30      0   2862.7   93.77   90.84    0
+ 0:    536870912       4194304     float    none      -1   5636.7   95.25   92.27      0   5607.5   95.74   92.75    0
+ 0:   1073741824       8388608     float    none      -1    11306   94.97   92.00      0    11363   94.49   91.54    0
+ 0:   2147483648      16777216     float    none      -1    22561   95.18   92.21      0    22478   95.54   92.55    0
+ 0:   4294967296      33554432     float    none      -1    44991   95.46   92.48      0    44942   95.57   92.58    0
+ 0: # Errors with asterisks indicate errors that have exceeded the maximum threshold.
+ 0: # Out of bounds values : 0 OK
+ 0: # Avg bus bandwidth    : 37.9021
+=====END SAMPLE=====
+
+=====BEGIN SAMPLE 6 id=allreduce-rccl-srun tool=rccl-tests collective=all_reduce_perf=====
+@@system: SYNTHETIC. 4 nodes x 8 accelerator ranks launched with srun --nodes=4 --ntasks-per-node=8 --label (' 0: ' prefix); header/device lines not included; rccl-tests footer line.
+@@expect: nrows=17; max_size=4294967296; oop_busbw_at_max=93.04; top3_sizes=[1073741824, 2147483648, 4294967296]; top3_oop_mean=92.737; top3_oop_min=92.45; footer_avg=43.6154; max_rank_plus1=None; hosts_listed=0
+-----8<-----
+ 0: #                                                              out-of-place                       in-place
+ 0: #       size         count      type   redop    root     time   algbw   busbw #wrong     time   algbw   busbw #wrong
+ 0: #        (B)    (elements)                               (us)  (GB/s)  (GB/s)            (us)  (GB/s)  (GB/s)
+ 0:        65536         16384     float     sum      -1   1410.8    0.05    0.09      0   1410.8    0.05    0.09    0
+ 0:       131072         32768     float     sum      -1   1410.8    0.09    0.18      0   1410.8    0.09    0.18    0
+ 0:       262144         65536     float     sum      -1   1410.8    0.19    0.36      0   1410.8    0.19    0.36    0
+ 0:       524288        131072     float     sum      -1   1410.8    0.37    0.72      0   1410.8    0.37    0.72    0
+ 0:      1048576        262144     float     sum      -1   1410.8    0.74    1.44      0   1410.8    0.74    1.44    0
+ 0:      2097152        524288     float     sum      -1   1430.7    1.47    2.84      0   1430.7    1.47    2.84    0
+ 0:      4194304       1048576     float     sum      -1   1443.4    2.91    5.63      0   1443.4    2.91    5.63    0
+ 0:      8388608       2097152     float     sum      -1   1487.0    5.64   10.93      0   1488.4    5.64   10.92    0
+ 0:     16777216       4194304     float     sum      -1   1584.1   10.59   20.52      0   1590.3   10.55   20.44    0
+ 0:     33554432       8388608     float     sum      -1   1784.1   18.81   36.44      0   1790.5   18.74   36.31    0
+ 0:     67108864      16777216     float     sum      -1   2211.3   30.35   58.80      0   2200.1   30.50   59.10    0
+ 0:    134217728      33554432     float     sum      -1   3243.7   41.38   80.17      0   3245.3   41.36   80.13    0
+ 0:    268435456      67108864     float     sum      -1   5709.0   47.02   91.10      0   5711.5   47.00   91.06    0
+ 0:    536870912     134217728     float     sum      -1    11217   47.86   92.73      0    11175   48.04   93.08    0
+ 0:   1073741824     268435456     float     sum      -1    22503   47.72   92.45      0    22530   47.66   92.34    0
+ 0:   2147483648     536870912     float     sum      -1    44874   47.86   92.72      0    45098   47.62   92.26    0
+ 0:   4294967296    1073741824     float     sum      -1    89440   48.02   93.04      0    89229   48.13   93.26    0
+ 0: # Errors with asterisks indicate errors that have exceeded the maximum threshold.
+ 0: # Out of bounds values : 0 OK
+ 0: # Avg bus bandwidth    : 43.6154
+=====END SAMPLE=====

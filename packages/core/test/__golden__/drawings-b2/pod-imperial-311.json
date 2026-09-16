@@ -1,0 +1,119 @@
+{
+  "input": "4b05d53b8ae3cca043e300cbca139dcf3368d82f36cdfc581af4d08b13654bc5",
+  "structure": {
+    "number": "311-H1-C1",
+    "kind": "elevation",
+    "paper": {
+      "w": 841,
+      "h": 594
+    },
+    "scale": "1:25",
+    "layers": {
+      "view-title": 3,
+      "tray-t2": 1,
+      "feeders": 24,
+      "tapoffs": 16,
+      "circuits": 12,
+      "lights": 2,
+      "pipes": 8,
+      "drops": 2,
+      "pipe-fittings": 6,
+      "racks": 2,
+      "busway-a": 2,
+      "busway-b": 2,
+      "tray-t1": 2,
+      "containment": 2,
+      "containment-roof": 9,
+      "containment-doors": 9,
+      "slab": 1,
+      "ceiling": 2,
+      "tags": 2,
+      "position-tags": 2,
+      "dimensions": 45,
+      "datums": 55,
+      "keynotes": 56,
+      "notes": 10,
+      "key-plan": 10,
+      "panel-keynotes": 50,
+      "panel-notes": 7
+    },
+    "tags": [
+      "A01",
+      "B01",
+      "POD-A01",
+      "POD-B01"
+    ],
+    "dimensions": [
+      "7'-2 1/2\"",
+      "7'-6 1/2\"",
+      "8'-3\"",
+      "8'-9 1/2\"",
+      "9'-6\"",
+      "10'-8\"",
+      "11'-9 1/2\"",
+      "5'-11\"",
+      "4'-7 1/2\"",
+      "1'-3 1/2\"",
+      "1'-2\"",
+      "1'-2\"",
+      "7'-6 1/2\""
+    ],
+    "datums": [
+      "±0'-0\" FFL",
+      "+7'-6 1/2\" TOP OF CONTAINMENT",
+      "+7'-6 1/2\" TOP OF RACK",
+      "+8'-3\" TCS PIPE",
+      "+8'-9 1/2\" BUSWAY",
+      "+9'-6\" LADDER T1",
+      "+9'-6\" LIGHT STRIP",
+      "+10'-8\" LADDER T2",
+      "+11'-9 1/2\" LADDER T3",
+      "+13'-1 1/2\" MIN. HEADROOM ABOVE SERVICES",
+      "+17'-8 1/2\" CEILING",
+      "+17'-8 1/2\" TOP OF CHIMNEY",
+      "+23'-7 1/2\" UNDERSIDE OF DECK"
+    ],
+    "keynotes": [
+      "01",
+      "02",
+      "03",
+      "04",
+      "05",
+      "10",
+      "11",
+      "13",
+      "20",
+      "21",
+      "23",
+      "30",
+      "31",
+      "50"
+    ],
+    "clearances": [],
+    "doorTypes": [
+      "sliding"
+    ],
+    "openBeyond": 2,
+    "breaks": [],
+    "runs": 0,
+    "fittings": {},
+    "viewports": [
+      {
+        "space": "elevation",
+        "mmPerM": 40,
+        "paperRect": {
+          "x": 98.5,
+          "y": 48,
+          "w": 426,
+          "h": 352
+        },
+        "cut": {
+          "axis": "x",
+          "at": 6.825,
+          "look": 1,
+          "depthM": 7.95
+        }
+      }
+    ]
+  }
+}

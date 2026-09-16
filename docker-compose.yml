@@ -1,0 +1,12 @@
+services:
+  aidc:
+    build: .
+    image: aidc-studio:latest
+    ports:
+      - "8787:8787"
+    environment:
+      PORT: "8787"
+      AIDC_DATA_DIR: /data/projects
+    volumes:
+      - ./data:/data
+    restart: unless-stopped

@@ -1,0 +1,115 @@
+{
+  "input": "edf925313a2ee423b7e5ca6e5dc9453fc4081cc47279d422ce5523735613f965",
+  "structure": {
+    "number": "311-H1-C1",
+    "kind": "elevation",
+    "paper": {
+      "w": 841,
+      "h": 594
+    },
+    "scale": "1:25",
+    "layers": {
+      "view-title": 3,
+      "feeders": 24,
+      "tapoffs": 16,
+      "circuits": 12,
+      "drops": 2,
+      "pipes": 14,
+      "lights": 2,
+      "containment": 2,
+      "containment-roof": 9,
+      "busway-a": 2,
+      "busway-b": 2,
+      "tray-t1": 2,
+      "cdu-crah": 2,
+      "containment-doors": 9,
+      "slab": 1,
+      "ceiling": 2,
+      "tags": 2,
+      "dimensions": 47,
+      "datums": 55,
+      "keynotes": 52,
+      "notes": 10,
+      "key-plan": 26,
+      "panel-keynotes": 44,
+      "panel-notes": 7
+    },
+    "tags": [
+      "DU01-A-CDU1",
+      "DU01-B-CDU1"
+    ],
+    "dimensions": [
+      "2.20",
+      "2.30",
+      "2.52",
+      "2.68",
+      "2.90",
+      "3.25",
+      "3.60",
+      "2.38",
+      "2.00",
+      "0.40",
+      "0.35",
+      "0.35",
+      "0.22",
+      "0.22",
+      "2.30"
+    ],
+    "datums": [
+      "±0.00 FFL",
+      "+2.30 TOP OF CONTAINMENT",
+      "+2.30 TOP OF RACK",
+      "+2.52 TCS PIPE",
+      "+2.68 BUSWAY",
+      "+2.90 LADDER T1",
+      "+2.90 LIGHT STRIP",
+      "+3.25 LADDER T2",
+      "+3.60 LADDER T3",
+      "+4.00 MIN. HEADROOM ABOVE SERVICES",
+      "+6.00 CEILING",
+      "+6.00 TOP OF CHIMNEY",
+      "+8.38 UNDERSIDE OF DECK"
+    ],
+    "keynotes": [
+      "02",
+      "03",
+      "04",
+      "05",
+      "10",
+      "11",
+      "13",
+      "20",
+      "23",
+      "30",
+      "31",
+      "32",
+      "50"
+    ],
+    "clearances": [],
+    "doorTypes": [
+      "sliding"
+    ],
+    "openBeyond": 2,
+    "breaks": [],
+    "runs": 0,
+    "fittings": {},
+    "viewports": [
+      {
+        "space": "elevation",
+        "mmPerM": 40,
+        "paperRect": {
+          "x": 90.1,
+          "y": 48,
+          "w": 442.8,
+          "h": 399.2
+        },
+        "cut": {
+          "axis": "x",
+          "at": 5.025,
+          "look": 1,
+          "depthM": 10.95
+        }
+      }
+    ]
+  }
+}

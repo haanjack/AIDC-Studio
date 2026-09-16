@@ -1,0 +1,32 @@
+# AIDC Studio — publication boundary (neutralization stream N3, 2026-09-15; from docs/legal/publication-exclude.draft.txt).
+# Path patterns are ROOT-ANCHORED (leading "/") so they never hide a same-named folder deeper in the tree.
+# The old unanchored "assets/" also hid apps/web/public/assets (our own generic models) — LICENSE-AUDIT M11.
+# apps/web/public/assets/** and apps/web/public/THIRD_PARTY_NOTICES.txt are PUBLISHED on purpose: keep them free of
+# third-party content (checked by tools/licenses/check-publication.mjs).
+
+## dependencies, build output, caches
+node_modules/
+/apps/web/dist/
+dist/
+.vite/
+__pycache__/
+*.pyc
+/tools/asset-pipeline/.venv/
+/engines/godot/.godot/
+*.log
+.DS_Store
+
+## private: live project data and local third-party downloads (never published)
+/data/
+/assets/
+
+## private by default: research notes, QA scripts and captures (publish later only a reviewed allowlist)
+/docs/research/
+
+## audit working papers stay private; the final notices are at the repository root
+/docs/legal/*
+
+## screenshots and page crops (re-shoot with own generic models; keep captures out of git)
+/screenshots/
+**/__screenshots__/
+deck-p*.png

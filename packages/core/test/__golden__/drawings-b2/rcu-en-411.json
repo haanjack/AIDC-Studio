@@ -1,0 +1,36 @@
+{
+  "input": "1a314737ce09af473f3869c5d509675766774c11bb921f56ccd7c96c3c6a2429",
+  "structure": {
+    "number": "411-DU01",
+    "kind": "mep-iso",
+    "paper": {
+      "w": 841,
+      "h": 594
+    },
+    "scale": "NTS",
+    "layers": {
+      "view-title": 2,
+      "pipes": 498,
+      "notes": 45,
+      "schedule": 88,
+      "panel-fittings": 5,
+      "legend": 14,
+      "panel-notes": 7
+    },
+    "tags": [],
+    "dimensions": [],
+    "datums": [],
+    "keynotes": [],
+    "clearances": [],
+    "doorTypes": [],
+    "openBeyond": 0,
+    "breaks": [],
+    "runs": 54,
+    "fittings": {
+      "isolation-valve": 44,
+      "strainer": 3,
+      "epiv": 16
+    },
+    "viewports": []
+  }
+}

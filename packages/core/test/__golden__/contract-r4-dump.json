@@ -1,0 +1,50 @@
+{
+  "note": "contract-r4: sha256 of the pre-r4 generateDrawings output ({id,number,title,kind,scale,group,svg}) per case, keyed by the input digest (project + analysis). Regenerate only for a deliberate input change: UPDATE_CONTRACT_DUMP=1 npx vitest run packages/core/test/contract-r4.test.ts",
+  "cases": {
+    "ref-en": {
+      "input": "417a42931946d8baf9a5fe9ac3b1495cf2ef5b9f8b096c505633ded9da96bc19",
+      "output": "3fd55b5aa67c6642eadcf4c0a68c88553752103c3058933b31b2974c8f75b401",
+      "sheets": 4
+    },
+    "ref-ko": {
+      "input": "417a42931946d8baf9a5fe9ac3b1495cf2ef5b9f8b096c505633ded9da96bc19",
+      "output": "11431559a3361839f9db6cab850bfde1ac0e4a527ad07225266517c248dc38b2",
+      "sheets": 4
+    },
+    "ref-default": {
+      "input": "417a42931946d8baf9a5fe9ac3b1495cf2ef5b9f8b096c505633ded9da96bc19",
+      "output": "3fd55b5aa67c6642eadcf4c0a68c88553752103c3058933b31b2974c8f75b401",
+      "sheets": 4
+    },
+    "ref-null": {
+      "input": "417a42931946d8baf9a5fe9ac3b1495cf2ef5b9f8b096c505633ded9da96bc19",
+      "output": "de0eb9911da41bc2d7241a6521f348e95bc77eedb186d208281afaea1d4cb10b",
+      "sheets": 4
+    },
+    "ref-rows-en": {
+      "input": "417a42931946d8baf9a5fe9ac3b1495cf2ef5b9f8b096c505633ded9da96bc19",
+      "output": "a31ef04108fc2c9d02ed8cd3c407b8c6bc6e644d1df378873f145d82fb085fa0",
+      "sheets": 24
+    },
+    "ref-rows-ko": {
+      "input": "417a42931946d8baf9a5fe9ac3b1495cf2ef5b9f8b096c505633ded9da96bc19",
+      "output": "c7ddcd222e23c7a82b5513b7b072ca37bf6ac00b8259ca8addae1db572c8dcb1",
+      "sheets": 24
+    },
+    "pod-en": {
+      "input": "8387e24f45970ad4fee3081823fb94fd9f4315dd584db7d6b4c9bab4c74487ec",
+      "output": "03a431721ded14ae9ef94bb0583f66337d9648a9e99ac84356915d504f25acea",
+      "sheets": 3
+    },
+    "pod-ko": {
+      "input": "8387e24f45970ad4fee3081823fb94fd9f4315dd584db7d6b4c9bab4c74487ec",
+      "output": "10f96dc7d42e7424371b25f044d30d4d0028488224821e3ab4190e2f52261fec",
+      "sheets": 3
+    },
+    "pod-rows": {
+      "input": "8387e24f45970ad4fee3081823fb94fd9f4315dd584db7d6b4c9bab4c74487ec",
+      "output": "e565ce40c78a18e844302bc1f6fc5917aaa810ac3670a38b6d5d2aee106ab292",
+      "sheets": 7
+    }
+  }
+}

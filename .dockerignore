@@ -1,0 +1,34 @@
+# AIDC Studio container build context (neutralization stream N3, 2026-09-15; LICENSE-AUDIT H4, M9, R-1.6).
+# Docker matches these patterns from the build-context root ("data" = ./data only; use "**/" for any depth).
+# The image needs only package manifests, packages/*/src, apps/*/src, apps/web (index.html, public/, vite config),
+# engines/ (export templates) and the root licence files. Everything below is excluded.
+
+.git
+**/node_modules
+**/dist
+**/*.log
+**/.DS_Store
+
+# private data, local third-party downloads, research and audit papers
+data
+assets
+docs
+tools
+screenshots
+**/__screenshots__
+**/deck-p*.png
+
+# Python / engine caches
+**/__pycache__
+**/*.pyc
+**/.venv
+**/.godot
+
+# tests and fixtures are not part of the image
+packages/*/test
+apps/*/test
+vitest.config.ts
+
+# local orchestration files
+docker-compose.yml
+pyrightconfig.json

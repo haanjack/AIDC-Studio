@@ -1,0 +1,700 @@
+{
+  "schema": "aidc.asset-credits/1",
+  "assets": [
+    {
+      "path": "env/sky_1k.hdr",
+      "kind": "hdri",
+      "title": "Autumn Field (Pure Sky)",
+      "authors": [
+        "Sergej Majboroda (original)",
+        "Jarod Guest (sky edits)"
+      ],
+      "sourcePage": "https://polyhaven.com/a/autumn_field_puresky",
+      "sourceUrl": "https://dl.polyhaven.org/file/ph-assets/HDRIs/hdr/4k/autumn_field_puresky_4k.hdr",
+      "sourceSha256": "52e13951317a14f74d9c04d687368d702f1c0648b48265f17831310a95eba2e9",
+      "sourceBytes": 16984221,
+      "license": "CC0-1.0",
+      "licenseUrl": "https://polyhaven.com/license",
+      "sha256": "17a4d48afa22c6a903f1c33223bfe09d15931198243131637a7e212625b06a21",
+      "bytes": 1113306,
+      "generator": "tools/asset-pipeline/env_map.py (OpenCV INTER_AREA resize to 1024x512, Radiance RLE)",
+      "modified": true
+    },
+    {
+      "path": "models/generic_rack_eia48_dlc.glb",
+      "kind": "model",
+      "title": "generic_rack_eia48_dlc \u2014 Generic 48 U EIA-310 liquid-cooled rack-scale GPU rack (compute / switch bands, 8 power shelves, rear busbar + manifold)",
+      "authors": [
+        "AIDC Studio"
+      ],
+      "license": "Apache-2.0 (AIDC Studio original)",
+      "sha256": "21b2537c96ef365fa66d49afa23758ce8bab1172c34b07c8276f9f3ed06842e4",
+      "bytes": 502928,
+      "generator": "tools/asset-pipeline/generic_build.py",
+      "source": "tools/asset-pipeline/generic_spec.json (parametric; no third-party input)",
+      "generated": true,
+      "modified": false
+    },
+    {
+      "path": "models/generic_rack_eia48_dlc_lod1.glb",
+      "kind": "model-lod1",
+      "title": "generic_rack_eia48_dlc \u2014 Generic 48 U EIA-310 liquid-cooled rack-scale GPU rack (compute / switch bands, 8 power shelves, rear busbar + manifold)",
+      "authors": [
+        "AIDC Studio"
+      ],
+      "license": "Apache-2.0 (AIDC Studio original)",
+      "sha256": "a1810d46c7dd7d31699987b182d34f9e6e91fdafa4b9243c3fa5a51347984b39",
+      "bytes": 93504,
+      "generator": "tools/asset-pipeline/generic_build.py",
+      "source": "tools/asset-pipeline/generic_spec.json (parametric; no third-party input)",
+      "generated": true,
+      "modified": false
+    },
+    {
+      "path": "usd/Generic/generic_rack_eia48_dlc.usd",
+      "kind": "usd",
+      "title": "generic_rack_eia48_dlc \u2014 Generic 48 U EIA-310 liquid-cooled rack-scale GPU rack (compute / switch bands, 8 power shelves, rear busbar + manifold)",
+      "authors": [
+        "AIDC Studio"
+      ],
+      "license": "Apache-2.0 (AIDC Studio original)",
+      "sha256": "9f3b46f104c9ab16b5ac4ec30b5c034a88b529f12d4d4cc7f6048d521cc06850",
+      "bytes": 94916,
+      "generator": "tools/asset-pipeline/generic_build.py",
+      "source": "tools/asset-pipeline/generic_spec.json (parametric; no third-party input)",
+      "generated": true,
+      "modified": false
+    },
+    {
+      "path": "usd/Generic/generic_rack_eia48_dlc.usda",
+      "kind": "usda",
+      "title": "generic_rack_eia48_dlc \u2014 Generic 48 U EIA-310 liquid-cooled rack-scale GPU rack (compute / switch bands, 8 power shelves, rear busbar + manifold)",
+      "authors": [
+        "AIDC Studio"
+      ],
+      "license": "Apache-2.0 (AIDC Studio original)",
+      "sha256": "fcf95e9050728d9b29135674a39e4003d25e2def6b4c790e9e690e0db9e0d6c6",
+      "bytes": 404682,
+      "generator": "tools/asset-pipeline/generic_build.py",
+      "source": "tools/asset-pipeline/generic_spec.json (parametric; no third-party input)",
+      "generated": true,
+      "modified": false
+    },
+    {
+      "path": "thumbs/generic_rack_eia48_dlc.png",
+      "kind": "thumbnail",
+      "title": "generic_rack_eia48_dlc \u2014 Generic 48 U EIA-310 liquid-cooled rack-scale GPU rack (compute / switch bands, 8 power shelves, rear busbar + manifold)",
+      "authors": [
+        "AIDC Studio"
+      ],
+      "license": "Apache-2.0 (AIDC Studio original)",
+      "sha256": "a94f238093c4ddd9b9002a21e6fd95b4fb3f7dc616422da740053490a20fa51e",
+      "bytes": 53361,
+      "generator": "tools/asset-pipeline/generic_build.py",
+      "source": "tools/asset-pipeline/generic_spec.json (parametric; no third-party input)",
+      "generated": true,
+      "modified": false
+    },
+    {
+      "path": "models/generic_rack_orv3_44ou_dlc.glb",
+      "kind": "model",
+      "title": "generic_rack_orv3_44ou_dlc \u2014 Generic 21-inch OU rack, 44 OU, liquid-cooled (central power-shelf zone, rear 48 V busbar + manifold)",
+      "authors": [
+        "AIDC Studio"
+      ],
+      "license": "Apache-2.0 (AIDC Studio original)",
+      "sha256": "21bcba04d666fe96e507cb3d9911a2a2fd452cfaa77d21548f22f5f6a1cc53dd",
+      "bytes": 411392,
+      "generator": "tools/asset-pipeline/generic_build.py",
+      "source": "tools/asset-pipeline/generic_spec.json (parametric; no third-party input)",
+      "generated": true,
+      "modified": false
+    },
+    {
+      "path": "models/generic_rack_orv3_44ou_dlc_lod1.glb",
+      "kind": "model-lod1",
+      "title": "generic_rack_orv3_44ou_dlc \u2014 Generic 21-inch OU rack, 44 OU, liquid-cooled (central power-shelf zone, rear 48 V busbar + manifold)",
+      "authors": [
+        "AIDC Studio"
+      ],
+      "license": "Apache-2.0 (AIDC Studio original)",
+      "sha256": "b1c674275407e8e1ca6bbb57963296408d653b883e46e3b3c4c2df805187ca3a",
+      "bytes": 74872,
+      "generator": "tools/asset-pipeline/generic_build.py",
+      "source": "tools/asset-pipeline/generic_spec.json (parametric; no third-party input)",
+      "generated": true,
+      "modified": false
+    },
+    {
+      "path": "usd/Generic/generic_rack_orv3_44ou_dlc.usd",
+      "kind": "usd",
+      "title": "generic_rack_orv3_44ou_dlc \u2014 Generic 21-inch OU rack, 44 OU, liquid-cooled (central power-shelf zone, rear 48 V busbar + manifold)",
+      "authors": [
+        "AIDC Studio"
+      ],
+      "license": "Apache-2.0 (AIDC Studio original)",
+      "sha256": "38b15857808b52a3b16a3c394d645bcfec4f5fe25371c8754c4f8f0f1b7cc7ee",
+      "bytes": 78918,
+      "generator": "tools/asset-pipeline/generic_build.py",
+      "source": "tools/asset-pipeline/generic_spec.json (parametric; no third-party input)",
+      "generated": true,
+      "modified": false
+    },
+    {
+      "path": "usd/Generic/generic_rack_orv3_44ou_dlc.usda",
+      "kind": "usda",
+      "title": "generic_rack_orv3_44ou_dlc \u2014 Generic 21-inch OU rack, 44 OU, liquid-cooled (central power-shelf zone, rear 48 V busbar + manifold)",
+      "authors": [
+        "AIDC Studio"
+      ],
+      "license": "Apache-2.0 (AIDC Studio original)",
+      "sha256": "d1ee3d44f38a0b25956aa7b2f0c63e2d9d01008b21d7831ef4800e37dea8f4e4",
+      "bytes": 326370,
+      "generator": "tools/asset-pipeline/generic_build.py",
+      "source": "tools/asset-pipeline/generic_spec.json (parametric; no third-party input)",
+      "generated": true,
+      "modified": false
+    },
+    {
+      "path": "thumbs/generic_rack_orv3_44ou_dlc.png",
+      "kind": "thumbnail",
+      "title": "generic_rack_orv3_44ou_dlc \u2014 Generic 21-inch OU rack, 44 OU, liquid-cooled (central power-shelf zone, rear 48 V busbar + manifold)",
+      "authors": [
+        "AIDC Studio"
+      ],
+      "license": "Apache-2.0 (AIDC Studio original)",
+      "sha256": "d481484e8f8a42859eb6d5b13a0f115532b083f5d53370077ddc2e0dc1d666bf",
+      "bytes": 49810,
+      "generator": "tools/asset-pipeline/generic_build.py",
+      "source": "tools/asset-pipeline/generic_spec.json (parametric; no third-party input)",
+      "generated": true,
+      "modified": false
+    },
+    {
+      "path": "models/generic_cdu_900x2122.glb",
+      "kind": "model",
+      "title": "generic_cdu_900x2122 \u2014 Generic in-row CDU cabinet, 900 mm frontage",
+      "authors": [
+        "AIDC Studio"
+      ],
+      "license": "Apache-2.0 (AIDC Studio original)",
+      "sha256": "4e37ff4f213cd048fec39146f834038d4a2500298817c650f2be00337b2ec914",
+      "bytes": 93780,
+      "generator": "tools/asset-pipeline/generic_build.py",
+      "source": "tools/asset-pipeline/generic_spec.json (parametric; no third-party input)",
+      "generated": true,
+      "modified": false
+    },
+    {
+      "path": "models/generic_cdu_900x2122_lod1.glb",
+      "kind": "model-lod1",
+      "title": "generic_cdu_900x2122 \u2014 Generic in-row CDU cabinet, 900 mm frontage",
+      "authors": [
+        "AIDC Studio"
+      ],
+      "license": "Apache-2.0 (AIDC Studio original)",
+      "sha256": "fedd022f38903cc5eda9ba96e9146afa0549585c352258e9f065c926a2cca8cb",
+      "bytes": 38344,
+      "generator": "tools/asset-pipeline/generic_build.py",
+      "source": "tools/asset-pipeline/generic_spec.json (parametric; no third-party input)",
+      "generated": true,
+      "modified": false
+    },
+    {
+      "path": "usd/Generic/generic_cdu_900x2122.usd",
+      "kind": "usd",
+      "title": "generic_cdu_900x2122 \u2014 Generic in-row CDU cabinet, 900 mm frontage",
+      "authors": [
+        "AIDC Studio"
+      ],
+      "license": "Apache-2.0 (AIDC Studio original)",
+      "sha256": "7fadc9fb55fe65a6e657d191a3ce19dc9347280b781e75f1c444c8ffd0f0b07f",
+      "bytes": 22598,
+      "generator": "tools/asset-pipeline/generic_build.py",
+      "source": "tools/asset-pipeline/generic_spec.json (parametric; no third-party input)",
+      "generated": true,
+      "modified": false
+    },
+    {
+      "path": "usd/Generic/generic_cdu_900x2122.usda",
+      "kind": "usda",
+      "title": "generic_cdu_900x2122 \u2014 Generic in-row CDU cabinet, 900 mm frontage",
+      "authors": [
+        "AIDC Studio"
+      ],
+      "license": "Apache-2.0 (AIDC Studio original)",
+      "sha256": "8844121c8d095fb9f8868a7194c36420837cb62f9f0831f6e5f97bc8dcb8b680",
+      "bytes": 83308,
+      "generator": "tools/asset-pipeline/generic_build.py",
+      "source": "tools/asset-pipeline/generic_spec.json (parametric; no third-party input)",
+      "generated": true,
+      "modified": false
+    },
+    {
+      "path": "thumbs/generic_cdu_900x2122.png",
+      "kind": "thumbnail",
+      "title": "generic_cdu_900x2122 \u2014 Generic in-row CDU cabinet, 900 mm frontage",
+      "authors": [
+        "AIDC Studio"
+      ],
+      "license": "Apache-2.0 (AIDC Studio original)",
+      "sha256": "98c918e69d6c00191137501e05472adc050b10afa436bdc15da3d6e6a9882f3e",
+      "bytes": 29858,
+      "generator": "tools/asset-pipeline/generic_build.py",
+      "source": "tools/asset-pipeline/generic_spec.json (parametric; no third-party input)",
+      "generated": true,
+      "modified": false
+    },
+    {
+      "path": "models/generic_cdu_1200x2400.glb",
+      "kind": "model",
+      "title": "generic_cdu_1200x2400 \u2014 Generic in-row CDU cabinet, 1200 mm frontage",
+      "authors": [
+        "AIDC Studio"
+      ],
+      "license": "Apache-2.0 (AIDC Studio original)",
+      "sha256": "a19bb5f205d7418bce0ff2ce9958ef205321a518d6025efe0d9ea54b6c88fa88",
+      "bytes": 141416,
+      "generator": "tools/asset-pipeline/generic_build.py",
+      "source": "tools/asset-pipeline/generic_spec.json (parametric; no third-party input)",
+      "generated": true,
+      "modified": false
+    },
+    {
+      "path": "models/generic_cdu_1200x2400_lod1.glb",
+      "kind": "model-lod1",
+      "title": "generic_cdu_1200x2400 \u2014 Generic in-row CDU cabinet, 1200 mm frontage",
+      "authors": [
+        "AIDC Studio"
+      ],
+      "license": "Apache-2.0 (AIDC Studio original)",
+      "sha256": "1f427185b39748bca05cfbab210e583dc9955b18ec7576459b0d326bd6f65c43",
+      "bytes": 42988,
+      "generator": "tools/asset-pipeline/generic_build.py",
+      "source": "tools/asset-pipeline/generic_spec.json (parametric; no third-party input)",
+      "generated": true,
+      "modified": false
+    },
+    {
+      "path": "usd/Generic/generic_cdu_1200x2400.usd",
+      "kind": "usd",
+      "title": "generic_cdu_1200x2400 \u2014 Generic in-row CDU cabinet, 1200 mm frontage",
+      "authors": [
+        "AIDC Studio"
+      ],
+      "license": "Apache-2.0 (AIDC Studio original)",
+      "sha256": "c9474fc7ad33e1ab794eb170ff389e83ee44bebc62c5d7edb8862c33df591ed5",
+      "bytes": 29858,
+      "generator": "tools/asset-pipeline/generic_build.py",
+      "source": "tools/asset-pipeline/generic_spec.json (parametric; no third-party input)",
+      "generated": true,
+      "modified": false
+    },
+    {
+      "path": "usd/Generic/generic_cdu_1200x2400.usda",
+      "kind": "usda",
+      "title": "generic_cdu_1200x2400 \u2014 Generic in-row CDU cabinet, 1200 mm frontage",
+      "authors": [
+        "AIDC Studio"
+      ],
+      "license": "Apache-2.0 (AIDC Studio original)",
+      "sha256": "127b03deb9d36c1234c8633c8c95c9730578841cc2436dcde4c9aaf2fec4b5ab",
+      "bytes": 109815,
+      "generator": "tools/asset-pipeline/generic_build.py",
+      "source": "tools/asset-pipeline/generic_spec.json (parametric; no third-party input)",
+      "generated": true,
+      "modified": false
+    },
+    {
+      "path": "thumbs/generic_cdu_1200x2400.png",
+      "kind": "thumbnail",
+      "title": "generic_cdu_1200x2400 \u2014 Generic in-row CDU cabinet, 1200 mm frontage",
+      "authors": [
+        "AIDC Studio"
+      ],
+      "license": "Apache-2.0 (AIDC Studio original)",
+      "sha256": "068a7643e0ff37db424595aa9ef9f19d70ffe0805404c79ec208221a9e89b6fd",
+      "bytes": 31076,
+      "generator": "tools/asset-pipeline/generic_build.py",
+      "source": "tools/asset-pipeline/generic_spec.json (parametric; no third-party input)",
+      "generated": true,
+      "modified": false
+    },
+    {
+      "path": "models/generic_crah_2515x1829.glb",
+      "kind": "model",
+      "title": "generic_crah_2515x1829 \u2014 Generic perimeter CRAH, 2515 mm frontage",
+      "authors": [
+        "AIDC Studio"
+      ],
+      "license": "Apache-2.0 (AIDC Studio original)",
+      "sha256": "216a0f25f97252afcce0239b0109232a1627b00ba6a2d67694871d76fc8cfd4a",
+      "bytes": 194940,
+      "generator": "tools/asset-pipeline/generic_build.py",
+      "source": "tools/asset-pipeline/generic_spec.json (parametric; no third-party input)",
+      "generated": true,
+      "modified": false
+    },
+    {
+      "path": "models/generic_crah_2515x1829_lod1.glb",
+      "kind": "model-lod1",
+      "title": "generic_crah_2515x1829 \u2014 Generic perimeter CRAH, 2515 mm frontage",
+      "authors": [
+        "AIDC Studio"
+      ],
+      "license": "Apache-2.0 (AIDC Studio original)",
+      "sha256": "1ffcbae75a75ab54e16dede83c94636bd0f2e27229d804b11f5623652cf86ec1",
+      "bytes": 41624,
+      "generator": "tools/asset-pipeline/generic_build.py",
+      "source": "tools/asset-pipeline/generic_spec.json (parametric; no third-party input)",
+      "generated": true,
+      "modified": false
+    },
+    {
+      "path": "usd/Generic/generic_crah_2515x1829.usd",
+      "kind": "usd",
+      "title": "generic_crah_2515x1829 \u2014 Generic perimeter CRAH, 2515 mm frontage",
+      "authors": [
+        "AIDC Studio"
+      ],
+      "license": "Apache-2.0 (AIDC Studio original)",
+      "sha256": "16b7e9395bd570249330466035d2b13ce8111d41a63eebe9c5e97cd73d827349",
+      "bytes": 42892,
+      "generator": "tools/asset-pipeline/generic_build.py",
+      "source": "tools/asset-pipeline/generic_spec.json (parametric; no third-party input)",
+      "generated": true,
+      "modified": false
+    },
+    {
+      "path": "usd/Generic/generic_crah_2515x1829.usda",
+      "kind": "usda",
+      "title": "generic_crah_2515x1829 \u2014 Generic perimeter CRAH, 2515 mm frontage",
+      "authors": [
+        "AIDC Studio"
+      ],
+      "license": "Apache-2.0 (AIDC Studio original)",
+      "sha256": "ed785c978d156590da04170fbb49978cc03095cdad01f7faab3f51854acd4ba7",
+      "bytes": 159998,
+      "generator": "tools/asset-pipeline/generic_build.py",
+      "source": "tools/asset-pipeline/generic_spec.json (parametric; no third-party input)",
+      "generated": true,
+      "modified": false
+    },
+    {
+      "path": "thumbs/generic_crah_2515x1829.png",
+      "kind": "thumbnail",
+      "title": "generic_crah_2515x1829 \u2014 Generic perimeter CRAH, 2515 mm frontage",
+      "authors": [
+        "AIDC Studio"
+      ],
+      "license": "Apache-2.0 (AIDC Studio original)",
+      "sha256": "62dd8b1f905d3b816139272e070d6f5f951294fa8351a9ac4643d8078b193fca",
+      "bytes": 55201,
+      "generator": "tools/asset-pipeline/generic_build.py",
+      "source": "tools/asset-pipeline/generic_spec.json (parametric; no third-party input)",
+      "generated": true,
+      "modified": false
+    },
+    {
+      "path": "models/generic_crah_3099x2388.glb",
+      "kind": "model",
+      "title": "generic_crah_3099x2388 \u2014 Generic perimeter CRAH, 3099 mm frontage",
+      "authors": [
+        "AIDC Studio"
+      ],
+      "license": "Apache-2.0 (AIDC Studio original)",
+      "sha256": "74ac17179a9d1f1b5c1fb45798b1a50aa1b1592a843022f63d821dbcec9176c2",
+      "bytes": 246372,
+      "generator": "tools/asset-pipeline/generic_build.py",
+      "source": "tools/asset-pipeline/generic_spec.json (parametric; no third-party input)",
+      "generated": true,
+      "modified": false
+    },
+    {
+      "path": "models/generic_crah_3099x2388_lod1.glb",
+      "kind": "model-lod1",
+      "title": "generic_crah_3099x2388 \u2014 Generic perimeter CRAH, 3099 mm frontage",
+      "authors": [
+        "AIDC Studio"
+      ],
+      "license": "Apache-2.0 (AIDC Studio original)",
+      "sha256": "a730a874097549c43f323b31dfe124735d767f65214c218e9bd2353bdc079d89",
+      "bytes": 48104,
+      "generator": "tools/asset-pipeline/generic_build.py",
+      "source": "tools/asset-pipeline/generic_spec.json (parametric; no third-party input)",
+      "generated": true,
+      "modified": false
+    },
+    {
+      "path": "usd/Generic/generic_crah_3099x2388.usd",
+      "kind": "usd",
+      "title": "generic_crah_3099x2388 \u2014 Generic perimeter CRAH, 3099 mm frontage",
+      "authors": [
+        "AIDC Studio"
+      ],
+      "license": "Apache-2.0 (AIDC Studio original)",
+      "sha256": "0ba3449020240724bd311c87a10ca40f56a4a4c43ed0fb913a094d279b11cc14",
+      "bytes": 52350,
+      "generator": "tools/asset-pipeline/generic_build.py",
+      "source": "tools/asset-pipeline/generic_spec.json (parametric; no third-party input)",
+      "generated": true,
+      "modified": false
+    },
+    {
+      "path": "usd/Generic/generic_crah_3099x2388.usda",
+      "kind": "usda",
+      "title": "generic_crah_3099x2388 \u2014 Generic perimeter CRAH, 3099 mm frontage",
+      "authors": [
+        "AIDC Studio"
+      ],
+      "license": "Apache-2.0 (AIDC Studio original)",
+      "sha256": "e1263c94f766be42f9c837501923a541093912859a196ddc37115cffd52a6a70",
+      "bytes": 201014,
+      "generator": "tools/asset-pipeline/generic_build.py",
+      "source": "tools/asset-pipeline/generic_spec.json (parametric; no third-party input)",
+      "generated": true,
+      "modified": false
+    },
+    {
+      "path": "thumbs/generic_crah_3099x2388.png",
+      "kind": "thumbnail",
+      "title": "generic_crah_3099x2388 \u2014 Generic perimeter CRAH, 3099 mm frontage",
+      "authors": [
+        "AIDC Studio"
+      ],
+      "license": "Apache-2.0 (AIDC Studio original)",
+      "sha256": "ef1043711bbbd948eb67b2cd8a18370525c46433d7ba76de76c18cb4b6377a03",
+      "bytes": 58933,
+      "generator": "tools/asset-pipeline/generic_build.py",
+      "source": "tools/asset-pipeline/generic_spec.json (parametric; no third-party input)",
+      "generated": true,
+      "modified": false
+    },
+    {
+      "path": "models/generic_crah_3050x3407.glb",
+      "kind": "model",
+      "title": "generic_crah_3050x3407 \u2014 Generic large perimeter CRAH, 3050 mm frontage, tall",
+      "authors": [
+        "AIDC Studio"
+      ],
+      "license": "Apache-2.0 (AIDC Studio original)",
+      "sha256": "27915abaff567c04b87a94651ab212568cd2fb9ff1f8ef57360481724e955a99",
+      "bytes": 257388,
+      "generator": "tools/asset-pipeline/generic_build.py",
+      "source": "tools/asset-pipeline/generic_spec.json (parametric; no third-party input)",
+      "generated": true,
+      "modified": false
+    },
+    {
+      "path": "models/generic_crah_3050x3407_lod1.glb",
+      "kind": "model-lod1",
+      "title": "generic_crah_3050x3407 \u2014 Generic large perimeter CRAH, 3050 mm frontage, tall",
+      "authors": [
+        "AIDC Studio"
+      ],
+      "license": "Apache-2.0 (AIDC Studio original)",
+      "sha256": "0d8a472c9bee522087630914368887573b78ddc8ffac81e2404b306dcf949628",
+      "bytes": 48104,
+      "generator": "tools/asset-pipeline/generic_build.py",
+      "source": "tools/asset-pipeline/generic_spec.json (parametric; no third-party input)",
+      "generated": true,
+      "modified": false
+    },
+    {
+      "path": "usd/Generic/generic_crah_3050x3407.usd",
+      "kind": "usd",
+      "title": "generic_crah_3050x3407 \u2014 Generic large perimeter CRAH, 3050 mm frontage, tall",
+      "authors": [
+        "AIDC Studio"
+      ],
+      "license": "Apache-2.0 (AIDC Studio original)",
+      "sha256": "b54ac6e6bab6a1f5d607accb510b446a2db26a34c84fdde0f70c11b67a956656",
+      "bytes": 53989,
+      "generator": "tools/asset-pipeline/generic_build.py",
+      "source": "tools/asset-pipeline/generic_spec.json (parametric; no third-party input)",
+      "generated": true,
+      "modified": false
+    },
+    {
+      "path": "usd/Generic/generic_crah_3050x3407.usda",
+      "kind": "usda",
+      "title": "generic_crah_3050x3407 \u2014 Generic large perimeter CRAH, 3050 mm frontage, tall",
+      "authors": [
+        "AIDC Studio"
+      ],
+      "license": "Apache-2.0 (AIDC Studio original)",
+      "sha256": "a06d6a8b3320eeeeeddc0abafa2cc398d3527d025342b0479f09d2d0bb21344f",
+      "bytes": 204341,
+      "generator": "tools/asset-pipeline/generic_build.py",
+      "source": "tools/asset-pipeline/generic_spec.json (parametric; no third-party input)",
+      "generated": true,
+      "modified": false
+    },
+    {
+      "path": "thumbs/generic_crah_3050x3407.png",
+      "kind": "thumbnail",
+      "title": "generic_crah_3050x3407 \u2014 Generic large perimeter CRAH, 3050 mm frontage, tall",
+      "authors": [
+        "AIDC Studio"
+      ],
+      "license": "Apache-2.0 (AIDC Studio original)",
+      "sha256": "f8117e6e7000b78980b330c435a1e4a066f6c52800d95d4722492540fe4032e1",
+      "bytes": 48541,
+      "generator": "tools/asset-pipeline/generic_build.py",
+      "source": "tools/asset-pipeline/generic_spec.json (parametric; no third-party input)",
+      "generated": true,
+      "modified": false
+    },
+    {
+      "path": "models/generic_fanwall_3600x3000.glb",
+      "kind": "model",
+      "title": "generic_fanwall_3600x3000 \u2014 Generic fan-wall unit, 3600 mm frontage, two fan rows",
+      "authors": [
+        "AIDC Studio"
+      ],
+      "license": "Apache-2.0 (AIDC Studio original)",
+      "sha256": "ce61d5826ebf0cc4e927d17cca642d09048966146027206e804a6aa5aa46bd8d",
+      "bytes": 395900,
+      "generator": "tools/asset-pipeline/generic_build.py",
+      "source": "tools/asset-pipeline/generic_spec.json (parametric; no third-party input)",
+      "generated": true,
+      "modified": false
+    },
+    {
+      "path": "models/generic_fanwall_3600x3000_lod1.glb",
+      "kind": "model-lod1",
+      "title": "generic_fanwall_3600x3000 \u2014 Generic fan-wall unit, 3600 mm frontage, two fan rows",
+      "authors": [
+        "AIDC Studio"
+      ],
+      "license": "Apache-2.0 (AIDC Studio original)",
+      "sha256": "21d0accc8735734a0090cd582687dcd99ef24456dc4d1c9feba0244f97f6782b",
+      "bytes": 72324,
+      "generator": "tools/asset-pipeline/generic_build.py",
+      "source": "tools/asset-pipeline/generic_spec.json (parametric; no third-party input)",
+      "generated": true,
+      "modified": false
+    },
+    {
+      "path": "usd/Generic/generic_fanwall_3600x3000.usd",
+      "kind": "usd",
+      "title": "generic_fanwall_3600x3000 \u2014 Generic fan-wall unit, 3600 mm frontage, two fan rows",
+      "authors": [
+        "AIDC Studio"
+      ],
+      "license": "Apache-2.0 (AIDC Studio original)",
+      "sha256": "328a5e8749c5da516038038f433cbe8b57b0344c00a453d32db0f3c19f00b30a",
+      "bytes": 81828,
+      "generator": "tools/asset-pipeline/generic_build.py",
+      "source": "tools/asset-pipeline/generic_spec.json (parametric; no third-party input)",
+      "generated": true,
+      "modified": false
+    },
+    {
+      "path": "usd/Generic/generic_fanwall_3600x3000.usda",
+      "kind": "usda",
+      "title": "generic_fanwall_3600x3000 \u2014 Generic fan-wall unit, 3600 mm frontage, two fan rows",
+      "authors": [
+        "AIDC Studio"
+      ],
+      "license": "Apache-2.0 (AIDC Studio original)",
+      "sha256": "35051fd1fbbf8a75168578a4d2db59fee7016c0750a36bba4bbb639247ba7d6f",
+      "bytes": 321235,
+      "generator": "tools/asset-pipeline/generic_build.py",
+      "source": "tools/asset-pipeline/generic_spec.json (parametric; no third-party input)",
+      "generated": true,
+      "modified": false
+    },
+    {
+      "path": "thumbs/generic_fanwall_3600x3000.png",
+      "kind": "thumbnail",
+      "title": "generic_fanwall_3600x3000 \u2014 Generic fan-wall unit, 3600 mm frontage, two fan rows",
+      "authors": [
+        "AIDC Studio"
+      ],
+      "license": "Apache-2.0 (AIDC Studio original)",
+      "sha256": "1efd229a6f9049cdbb510293fbe3e3bda6a9ae0dae0f607aa8e227001bec9ee3",
+      "bytes": 71378,
+      "generator": "tools/asset-pipeline/generic_build.py",
+      "source": "tools/asset-pipeline/generic_spec.json (parametric; no third-party input)",
+      "generated": true,
+      "modified": false
+    },
+    {
+      "path": "models/generic_rack_orw_44ou_dlc.glb",
+      "kind": "model",
+      "title": "generic_rack_orw_44ou_dlc \u2014 Generic wide OU rack, 44 OU (1200 x 1219 mm), liquid-cooled rack-scale configuration: 18 compute / 9 switch / 8 power trays, busbar at the datum depth, rear manifold, forklift base",
+      "authors": [
+        "AIDC Studio"
+      ],
+      "license": "Apache-2.0 (AIDC Studio original)",
+      "sha256": "510b4559414ab5c944a2ba81794947d5d2bb5c5c17b91e0591da11e4cedf46a9",
+      "bytes": 920484,
+      "generator": "tools/asset-pipeline/generic_build.py",
+      "source": "tools/asset-pipeline/generic_spec.json (parametric; no third-party input)",
+      "generated": true,
+      "modified": false
+    },
+    {
+      "path": "models/generic_rack_orw_44ou_dlc_lod1.glb",
+      "kind": "model-lod1",
+      "title": "generic_rack_orw_44ou_dlc \u2014 Generic wide OU rack, 44 OU (1200 x 1219 mm), liquid-cooled rack-scale configuration: 18 compute / 9 switch / 8 power trays, busbar at the datum depth, rear manifold, forklift base",
+      "authors": [
+        "AIDC Studio"
+      ],
+      "license": "Apache-2.0 (AIDC Studio original)",
+      "sha256": "e8f467c9d5cf5aeeb122a23615fe42a6f20f41a1c5f5ad7cee1eca81f0810566",
+      "bytes": 143744,
+      "generator": "tools/asset-pipeline/generic_build.py",
+      "source": "tools/asset-pipeline/generic_spec.json (parametric; no third-party input)",
+      "generated": true,
+      "modified": false
+    },
+    {
+      "path": "usd/Generic/generic_rack_orw_44ou_dlc.usd",
+      "kind": "usd",
+      "title": "generic_rack_orw_44ou_dlc \u2014 Generic wide OU rack, 44 OU (1200 x 1219 mm), liquid-cooled rack-scale configuration: 18 compute / 9 switch / 8 power trays, busbar at the datum depth, rear manifold, forklift base",
+      "authors": [
+        "AIDC Studio"
+      ],
+      "license": "Apache-2.0 (AIDC Studio original)",
+      "sha256": "c1c1d730aba15b17e3a27f2900389940065c0412d8e33c53ecb7f0f74f98ba42",
+      "bytes": 158877,
+      "generator": "tools/asset-pipeline/generic_build.py",
+      "source": "tools/asset-pipeline/generic_spec.json (parametric; no third-party input)",
+      "generated": true,
+      "modified": false
+    },
+    {
+      "path": "usd/Generic/generic_rack_orw_44ou_dlc.usda",
+      "kind": "usda",
+      "title": "generic_rack_orw_44ou_dlc \u2014 Generic wide OU rack, 44 OU (1200 x 1219 mm), liquid-cooled rack-scale configuration: 18 compute / 9 switch / 8 power trays, busbar at the datum depth, rear manifold, forklift base",
+      "authors": [
+        "AIDC Studio"
+      ],
+      "license": "Apache-2.0 (AIDC Studio original)",
+      "sha256": "14aed487632fde5dfed1618e4dd7015d2551f08f6580b5c6f60ff57181f509ab",
+      "bytes": 648818,
+      "generator": "tools/asset-pipeline/generic_build.py",
+      "source": "tools/asset-pipeline/generic_spec.json (parametric; no third-party input)",
+      "generated": true,
+      "modified": false
+    },
+    {
+      "path": "thumbs/generic_rack_orw_44ou_dlc.png",
+      "kind": "thumbnail",
+      "title": "generic_rack_orw_44ou_dlc \u2014 Generic wide OU rack, 44 OU (1200 x 1219 mm), liquid-cooled rack-scale configuration: 18 compute / 9 switch / 8 power trays, busbar at the datum depth, rear manifold, forklift base",
+      "authors": [
+        "AIDC Studio"
+      ],
+      "license": "Apache-2.0 (AIDC Studio original)",
+      "sha256": "b4aec1aa8108684228b7fdac4378840b944f09a9c23e49afe19d430a3e4e7728",
+      "bytes": 95838,
+      "generator": "tools/asset-pipeline/generic_build.py",
+      "source": "tools/asset-pipeline/generic_spec.json (parametric; no third-party input)",
+      "generated": true,
+      "modified": false
+    }
+  ],
+  "note": "Provenance and licence of every file under apps/web/public/assets."
+}

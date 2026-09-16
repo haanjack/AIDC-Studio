@@ -1,0 +1,54 @@
+{
+  "note": "Neutral reference (stream D / P4, OCP-DESIGN-PROPOSAL §7.1). Counts, kW, issue ids and standards-check posture; regenerate only deliberately (UPDATE_GOLDEN=1) and list the reason in the build report.",
+  "name": "Reference AI Hall — liquid-cooled 21-inch OU racks",
+  "id": "ref-neutral-hall",
+  "pods": 6,
+  "hallA": {
+    "width": 19.2,
+    "depth": 27.6
+  },
+  "equipmentByCatalogId": {
+    "cdu-row-l2l-1400": 8,
+    "cpu-rack-2s-20": 4,
+    "crah-generic-400": 7,
+    "mgmt-rack-42u": 2,
+    "network-rack-48u": 18,
+    "storage-rack-afa": 8,
+    "ubb8-oam-dlc-hpr-5x": 96
+  },
+  "gpus": 3840,
+  "racks": 128,
+  "itKW": 5116.609,
+  "pue": 1.15781,
+  "capexUSD": 256327179,
+  "errors": 0,
+  "warnings": 0,
+  "issues": [
+    "info:std-cl08-loop-hall-a",
+    "info:std-cl14-hall-a",
+    "info:std-fc-summary-hall-a",
+    "info:std-fc-summary-hall-b",
+    "info:std-nw01-cluster",
+    "info:std-nw01-pod"
+  ],
+  "standardsPosture": [
+    "CL-03:pass:info",
+    "CL-04:pass:info",
+    "CL-05:pass:info",
+    "CL-06:pass:info",
+    "CL-08:finding:info",
+    "CL-09:pass:info",
+    "CL-14:finding:info",
+    "CL-16:pass:info",
+    "FC-00:finding:info",
+    "NW-01:finding:info",
+    "PW-01:pass:info",
+    "PW-02:pass:info",
+    "PW-05:pass:info",
+    "PW-06:pass:info",
+    "PW-07:pass:info",
+    "RK-01:pass:info",
+    "RK-02:pass:info",
+    "RK-03:pass:info"
+  ]
+}

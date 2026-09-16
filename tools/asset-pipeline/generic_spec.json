@@ -1,0 +1,180 @@
+{
+  "$schema_note": "Data-driven spec for the AIDC Studio generic equipment models (neutralization stream N1b, 2026-09-15). Models are keyed by STANDARD FORM FACTOR and configuration, never by vendor: no logos, lettering, card art, HMI screens or vendor trade dress. Tags on every number: standard (cited public standard fact) | catalog (taken from the AIDC catalog dims so the viewer fit is exact) | estimate (our own assumption). The OCP-standards design round reuses form_factors + layouts; generic_usd.py reads nothing else.",
+  "version": "1.0.0",
+  "licence": "Apache-2.0 (AIDC Studio original)",
+  "generator": "tools/asset-pipeline/generic_build.py",
+
+  "sources": {
+    "EIA": "EIA-310 19-inch rack facts (panel 482.6 mm, 1 U = 44.45 mm, rail opening 450 mm, hole c/c 465 mm) as summarised in https://en.wikipedia.org/wiki/19-inch_rack",
+    "ORV3": "OCP Open Rack V3: 21-inch (537 mm) IT width, OpenU = 48 mm, 600 mm outside width - https://en.wikipedia.org/wiki/Open_Compute_Project (citing opencompute.org Open Rack/SpecsAndDesigns); 48 V busbar + rear liquid manifolds - https://techarena.ai/content/why-does-ai-need-a-wider-rack",
+    "MGX": "NVL72-class rack: 1 RU liquid-cooled compute and switch trays, 19-inch EIA gear in an ORV3-width frame, 18 compute + 9 switch trays, blind-mate manifold - https://developer.nvidia.com/blog/nvidia-contributes-nvidia-gb200-nvl72-designs-to-open-compute-project/ (used only for the tray count / pitch; no visual reference)",
+    "ORW": "Open Rack Wide (ORW) Base Specification V1.0.0 (2026-04-28) - https://www.opencompute.org/documents/open-rack-wide-orw-base-specification-v1-0-0-final-pdf ; Open Rack Wide (ORW) Meta Design Specification V1.0.0 (2026-04-28, drawings rev 1.0 of 2026-03-13) - https://www.opencompute.org/documents/open-rack-wide-orw-meta-design-specification-v1-0-0-final-pdf . Values used as data only (no spec text or figures copied): nominal 2390 x 1200 x 1219 mm, OpenU 48.00 mm, 44 OU / 47 RU / 88 half-OU, inner verticals 1094.44 mm, floor-to-canopy 2389.9 and base-surface-to-canopy 2239.89 mm, datum A to +48 V busbar 802.59 mm, no casters (forklift / pallet / AGV base), HAC seal plane 1068 mm from the front face, 4700 kg braced payload, 125 kg per IT support shelf set. Values checked in the P0 closure (docs/research/ocp/p0-rack-power.md section 2.1, private notes).",
+    "CATALOG": "packages/core/src/catalog/catalog.ts + seeds/facility.ts dims (w, d, h in metres)"
+  },
+
+  "palette": {
+    "$note": "sRGB hex. Neutral greys only: nothing yellow / cyan / aqua (reads as trays / network lines) and no saturated red / blue pipes (reserved for information layers). Look names avoid /screen|led|emis/ so the viewer's GLB emissive override (apps/web/src/viewer/models.ts) leaves them alone.",
+    "RackFrame":      { "color": "#2a2c2f", "metallic": 0.35, "roughness": 0.55 },
+    "RackRail":       { "color": "#45484c", "metallic": 0.40, "roughness": 0.50 },
+    "RackSide":       { "color": "#2f3135", "metallic": 0.10, "roughness": 0.80 },
+    "RackTop":        { "color": "#232528", "metallic": 0.30, "roughness": 0.60 },
+    "Plinth":         { "color": "#111214", "metallic": 0.10, "roughness": 0.85 },
+    "Bulkhead":       { "color": "#141517", "metallic": 0.00, "roughness": 0.90 },
+    "TrayCompute":    { "color": "#34363a", "metallic": 0.25, "roughness": 0.60 },
+    "TraySwitch":     { "color": "#3c3e42", "metallic": 0.25, "roughness": 0.60 },
+    "TrayPower":      { "color": "#5b5e62", "metallic": 0.30, "roughness": 0.55 },
+    "TrayMgmt":       { "color": "#2e3033", "metallic": 0.20, "roughness": 0.65 },
+    "TrayBlank":      { "color": "#1f2124", "metallic": 0.20, "roughness": 0.70 },
+    "Stiffener":      { "color": "#4a4d51", "metallic": 0.45, "roughness": 0.45 },
+    "VentDark":       { "color": "#0e0f11", "metallic": 0.00, "roughness": 0.95 },
+    "PortCage":       { "color": "#18191b", "metallic": 0.15, "roughness": 0.70 },
+    "Handle":         { "color": "#a9adb2", "metallic": 0.50, "roughness": 0.40 },
+    "StatusLamp":     { "color": "#dfe5e8", "metallic": 0.00, "roughness": 0.40, "emissive": "#2a2c2e" },
+    "Busbar":         { "color": "#3b3d40", "metallic": 0.55, "roughness": 0.45 },
+    "ManifoldSteel":  { "color": "#8d9296", "metallic": 0.60, "roughness": 0.35 },
+    "Coupler":        { "color": "#3a3c3f", "metallic": 0.30, "roughness": 0.55 },
+    "CabinetLight":   { "color": "#c6c9cc", "metallic": 0.15, "roughness": 0.60 },
+    "CabinetTrim":    { "color": "#8e9296", "metallic": 0.25, "roughness": 0.55 },
+    "DoorLine":       { "color": "#55585c", "metallic": 0.10, "roughness": 0.80 },
+    "Louvre":         { "color": "#7b7f83", "metallic": 0.20, "roughness": 0.65 },
+    "LouvreGap":      { "color": "#1c1d1f", "metallic": 0.00, "roughness": 0.95 },
+    "PipeSteel":      { "color": "#9ca1a6", "metallic": 0.60, "roughness": 0.35 },
+    "Flange":         { "color": "#5f6367", "metallic": 0.50, "roughness": 0.45 },
+    "FanGrille":      { "color": "#26282b", "metallic": 0.30, "roughness": 0.60 },
+    "FanRing":        { "color": "#6c7074", "metallic": 0.35, "roughness": 0.50 },
+    "FanHub":         { "color": "#3e4043", "metallic": 0.30, "roughness": 0.55 },
+    "FilterMesh":     { "color": "#9fa3a7", "metallic": 0.10, "roughness": 0.85 }
+  },
+
+  "form_factors": {
+    "eia310-19-48u": {
+      "label": "EIA-310 19-inch cabinet, 48 U",
+      "unit": "U", "pitch_mm": 44.45, "pitch_tag": "standard (EIA)",
+      "units": 48,
+      "panel_width_mm": 482.6, "panel_tag": "standard (EIA)",
+      "rail_opening_mm": 450, "rail_hole_cc_mm": 465, "rails_tag": "standard (EIA)",
+      "frame_mm": { "w": 600, "d": 1200, "h": 2300, "tag": "catalog (600 x 1200 x 2300 cabinet; 600 mm is a common EIA cabinet width)" },
+      "plinth_mm": 60, "top_mm": 92, "tag_plinth_top": "estimate (2300 - 48 x 44.45 = 166.4 mm split into plinth, top cover and 14 mm clearances)",
+      "front_recess_mm": 55, "rear_zone_mm": 150,
+      "notes": "Front: equipment faceplates are 482.6 mm wide; the 58.7 mm each side are vertical rail / cable-manager members."
+    },
+    "eia310-19-42u": {
+      "label": "EIA-310 19-inch cabinet, 42 U",
+      "unit": "U", "pitch_mm": 44.45, "pitch_tag": "standard (EIA)",
+      "units": 42,
+      "panel_width_mm": 482.6, "panel_tag": "standard (EIA)",
+      "rail_opening_mm": 450, "rail_hole_cc_mm": 465, "rails_tag": "standard (EIA)",
+      "frame_mm": { "w": 600, "d": 1200, "h": 2000, "tag": "estimate (typical 42 U cabinet, matches core RACK_MODELS rack-42u-600x1200)" },
+      "plinth_mm": 60, "top_mm": 60, "tag_plinth_top": "estimate",
+      "front_recess_mm": 55, "rear_zone_mm": 150
+    },
+    "orv3-21-44ou": {
+      "label": "21-inch OU rack, 44 OU",
+      "unit": "OU", "pitch_mm": 48, "pitch_tag": "standard (ORV3 OpenU)",
+      "units": 44,
+      "panel_width_mm": 537, "panel_tag": "standard (ORV3 21-inch IT width)",
+      "frame_mm": { "w": 600, "d": 1200, "h": 2300, "tag": "w standard (ORV3 600 mm outside width); d, h estimate (core RACK_MODELS rack-orv3-44ou depth; height = 44 OU + plinth + top)" },
+      "plinth_mm": 60, "top_mm": 108, "tag_plinth_top": "estimate",
+      "front_recess_mm": 55, "rear_zone_mm": 150,
+      "busbar": { "position": "rear, centred", "voltage_vdc": 48, "tag": "standard (ORV3 48 V busbar at the rear)" },
+      "notes": "Power-shelf zone and optional rear liquid manifold are configuration, not form factor (layouts below)."
+    },
+    "orw-wide-44ou": {
+      "label": "Wide OU rack, 44 OU",
+      "unit": "OU", "pitch_mm": 48, "pitch_tag": "standard (ORW Base 1.0.0: OpenU 48.00 mm; 44 OU / 47 RU / 88 half-OU)",
+      "units": 44,
+      "panel_width_mm": 1094.44, "panel_tag": "standard (inner verticals 1094.44 mm, ORW Meta Design 1.0.0 drawings); faceplates are drawn to fill the opening",
+      "face_columns": 2, "column_gap_mm": 6, "columns_tag": "estimate (generic wide-tray facade: two half-width faceplate fields with a divider; not a tray design)",
+      "frame_mm": { "w": 1200, "d": 1219, "h": 2390, "tag": "standard (ORW Meta Design 1.0.0: nominal 2390 x 1200 x 1219 mm; drawing values 2389.9 / 1200.24 / 1219.24 mm)" },
+      "plinth_mm": 150, "top_mm": 90, "tag_plinth_top": "plinth derived (floor-to-canopy 2389.9 minus base-surface-to-canopy 2239.89 = 150 mm, ORW Meta Design 1.0.0 drawings); top canopy thickness estimate",
+      "front_recess_mm": 60, "rear_zone_mm": 150,
+      "busbar": { "from_front_mm": 802.59, "width_mm": 90, "depth_mm": 30, "voltage_vdc": 48,
+        "tag": "standard (datum A to +48 V busbar 802.59 mm, ORW 1.0.0 drawings; frame busbar interfaces identical to the high-power 21-inch rack busbar interface, ORW Base 1.0.0 section 4.3); datum placed at the front vertical (faceplate) plane - estimate; busbar width and depth estimate (overall busbar depth is not defined by the base specification)" },
+      "rear_manifold_y_mm": 300,
+      "base": { "casters": false, "forklift_pockets": { "count": 2, "width_mm": 250, "height_mm": 100, "pitch_mm": 600, "sides": false },
+        "tag": "standard (no casters; forklift / pallet / AGV base, ORW Meta Design 1.0.0); pocket size and pitch estimate" },
+      "hac_seal_plane_mm": 1068, "hac_tag": "standard (default hot-aisle containment seal plane 42 in = 1068 mm from the front face, ORW Meta Design 1.0.0)",
+      "payload_kg": 4700, "it_shelf_kg_per_set": 125, "payload_tag": "standard (ORW Meta Design 1.0.0: payload 4700 kg minimum with allowable bracing, excluding the frame; 125 kg per IT support shelf set, dynamic)",
+      "standards": ["orw-base@1.0.0", "orw-meta-design@1.0.0"],
+      "notes": "Released V1.0.0 documents (no draft chip). The liquid-cooled busbar specification is in progress and no busbar current / kW rating is stated, so the model carries no rating."
+    }
+  },
+
+  "$layouts_note": "Layouts are bottom-up band lists [start (1-based), count, kind] with an optional 4th element = units per tray (default 1; count must be a multiple); kinds: compute | switch | power | mgmt | blank | stiffener. Every unit of the form factor must be covered exactly once (generic_usd.py checks it). Band positions are a generic DLC rack-scale configuration (power top and bottom, scale-up switches in the middle) and match the U-map resolver in packages/core/src/layout/rackContents.ts so 2D elevations and 3D agree.",
+  "layouts": {
+    "rackscale-dlc-48u-72acc": {
+      "form_factor": "eia310-19-48u",
+      "label": "Liquid-cooled rack-scale GPU configuration: 18 x 1U compute, 9 x 1U scale-up switch, 8 x 1U power shelves",
+      "bands": [
+        [1, 2, "stiffener"], [3, 2, "blank"], [5, 4, "power"], [9, 2, "blank"], [11, 8, "compute"],
+        [19, 9, "switch"], [28, 1, "blank"], [29, 10, "compute"], [39, 1, "blank"], [40, 4, "power"],
+        [44, 1, "blank"], [45, 2, "stiffener"], [47, 2, "mgmt"]
+      ],
+      "rear": { "busbar": true, "manifold": true, "qd_rows": "compute+switch" },
+      "tag": "estimate (tray counts: MGX source; positions: core rackContents.ts)"
+    },
+    "rackscale-dlc-orv3-44ou": {
+      "form_factor": "orv3-21-44ou",
+      "label": "21-inch OU rack liquid-cooled configuration: central power-shelf zone, 16 x 1 OU compute, 8 x 1 OU switch",
+      "bands": [
+        [1, 1, "blank"], [2, 8, "compute"], [10, 4, "switch"], [14, 3, "blank"], [17, 2, "power"], [19, 4, "blank"],
+        [23, 2, "power"], [25, 4, "switch"], [29, 8, "compute"], [37, 6, "blank"], [43, 2, "mgmt"]
+      ],
+      "rear": { "busbar": true, "manifold": true, "qd_rows": "compute+switch" },
+      "tag": "estimate (illustrative 21-inch OU rack configuration for the standards design round; not mapped to a catalog item yet)"
+    },
+    "rackscale-dlc-orw-44ou": {
+      "form_factor": "orw-wide-44ou",
+      "label": "Wide OU rack liquid-cooled rack-scale configuration: 18 x 1 OU compute, 9 x 1 OU scale-up switch, 8 x 1 OU power shelves, 2 x 1 OU management",
+      "bands": [
+        [1, 1, "blank"], [2, 4, "power"], [6, 1, "blank"], [7, 9, "compute"], [16, 1, "blank"], [17, 9, "switch"],
+        [26, 1, "blank"], [27, 9, "compute"], [36, 1, "blank"], [37, 4, "power"], [41, 2, "blank"], [43, 2, "mgmt"]
+      ],
+      "rear": { "busbar": true, "manifold": true, "qd_rows": "compute+switch" },
+      "tag": "estimate (generic 72-accelerator rack-scale configuration of this spec: same tray counts as rackscale-dlc-48u-72acc, positions chosen for the 44 OU wide frame; not a vendor tray layout)"
+    }
+  },
+
+  "racks": [
+    { "name": "generic_rack_eia48_dlc", "layout": "rackscale-dlc-48u-72acc", "dims_m": { "w": 0.6, "d": 1.2, "h": 2.3 },
+      "description": "Generic 48 U EIA-310 liquid-cooled rack-scale GPU rack (compute / switch bands, 8 power shelves, rear busbar + manifold)" },
+    { "name": "generic_rack_orv3_44ou_dlc", "layout": "rackscale-dlc-orv3-44ou", "dims_m": { "w": 0.6, "d": 1.2, "h": 2.3 },
+      "description": "Generic 21-inch OU rack, 44 OU, liquid-cooled (central power-shelf zone, rear 48 V busbar + manifold)" },
+    { "name": "generic_rack_orw_44ou_dlc", "layout": "rackscale-dlc-orw-44ou", "dims_m": { "w": 1.2, "d": 1.219, "h": 2.39 },
+      "description": "Generic wide OU rack, 44 OU (1200 x 1219 mm), liquid-cooled rack-scale configuration: 18 compute / 9 switch / 8 power trays, busbar at the datum depth, rear manifold, forklift base" }
+  ],
+
+  "cdus": {
+    "$note": "Row-end / in-row liquid-to-liquid CDU cabinet: service doors (one per ~600 mm of frontage), neutral louvre bands, recessed handles, a small neutral status lamp, rear louvres, top piping stubs (primary + secondary supply / return, neutral steel with flanges). No display, no logo. Cabinet = catalog w x d x h; the stubs rise above it.",
+    "door_pitch_mm": 600, "stub_height_mm": 220, "stub_radius_mm": 50, "plinth_mm": 50, "tag": "estimate",
+    "units": [
+      { "name": "generic_cdu_900x2122", "dims_m": { "w": 0.9, "d": 1.243, "h": 2.122 }, "description": "Generic in-row CDU cabinet, 900 mm frontage" },
+      { "name": "generic_cdu_1200x2400", "dims_m": { "w": 1.2, "d": 1.2, "h": 2.4 }, "description": "Generic in-row CDU cabinet, 1200 mm frontage" }
+    ]
+  },
+
+  "crahs": {
+    "$note": "Perimeter chilled-water CRAH / fan-wall: lower fan section (EC fan grilles in a row, count from width), upper filter / coil doors with door lines and handles, top return-air grille recessed into the roof, neutral light-grey panels. No display, no logo. Cabinet = catalog w x d x h.",
+    "fan_pitch_mm": 800, "fan_section_frac": 0.42, "plinth_mm": 60, "tag": "estimate",
+    "units": [
+      { "name": "generic_crah_2515x1829", "dims_m": { "w": 2.515, "d": 0.889, "h": 1.829 }, "description": "Generic perimeter CRAH, 2515 mm frontage" },
+      { "name": "generic_crah_3099x2388", "dims_m": { "w": 3.099, "d": 1.067, "h": 2.388 }, "description": "Generic perimeter CRAH, 3099 mm frontage" },
+      { "name": "generic_crah_3050x3407", "dims_m": { "w": 3.05, "d": 1.15, "h": 3.407 }, "description": "Generic large perimeter CRAH, 3050 mm frontage, tall" },
+      { "name": "generic_fanwall_3600x3000", "dims_m": { "w": 3.6, "d": 1.5, "h": 3.0 }, "fan_rows": 2, "description": "Generic fan-wall unit, 3600 mm frontage, two fan rows" }
+    ]
+  },
+
+  "catalogMap": {
+    "$note": "catalog id -> generic model (asset.glb). The catalog owner applies it (packages/core/src/catalog); ids never change. Form-factor basis per item.",
+    "nvidia-gb300-nvl72": { "glb": "generic_rack_eia48_dlc.glb", "basis": "MGX source: 1 RU EIA trays; cabinet = catalog 0.6 x 1.2 x 2.3 m (48 U)" },
+    "nvidia-gb200-nvl72": { "glb": "generic_rack_eia48_dlc.glb", "basis": "same class as above" },
+    "nvidia-vr-nvl72": { "glb": "generic_rack_eia48_dlc.glb", "basis": "estimate: same catalog dims" },
+    "vertiv-xdu1350": { "glb": "generic_cdu_900x2122.glb", "basis": "catalog dims 0.9 x 1.243 x 2.122 m (catalog re-sourced to the public datasheet on 2026-09-15)" },
+    "vertiv-xdu2300": { "glb": "generic_cdu_1200x2400.glb", "basis": "catalog dims 1.2 x 1.2 x 2.4 m" },
+    "vertiv-cw084": { "glb": "generic_crah_2515x1829.glb", "basis": "catalog dims 2.515 x 0.889 x 1.829 m" },
+    "vertiv-cw181": { "glb": "generic_crah_3099x2388.glb", "basis": "catalog dims 3.099 x 1.067 x 2.388 m" },
+    "vertiv-cw375": { "glb": "generic_crah_3050x3407.glb", "basis": "catalog dims 3.05 x 1.15 x 3.407 m" },
+    "liebert-cwa-fanwall-600": { "glb": "generic_fanwall_3600x3000.glb", "basis": "optional (item had no model): catalog dims 3.6 x 1.5 x 3.0 m" },
+    "amd-helios-mi455x": { "glb": "generic_rack_orw_44ou_dlc.glb", "basis": "wide OU rack form factor (ORW Base / Meta Design 1.0.0 values; catalog dims 1.2 x 1.219 x 2.39 m) with the generic 72-accelerator band layout; replaces the retired vendor-shaped wide-rack model (2026-09-15)" }
+  }
+}

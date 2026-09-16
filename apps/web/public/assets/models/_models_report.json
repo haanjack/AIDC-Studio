@@ -1,0 +1,679 @@
+[
+  {
+    "name": "generic_cdu_1200x2400",
+    "file": "generic_cdu_1200x2400.glb",
+    "lod1": "generic_cdu_1200x2400_lod1.glb",
+    "triangles": 2770,
+    "lod1Triangles": 776,
+    "bytes": 141416,
+    "lod1Bytes": 42988,
+    "measuredDims": {
+      "w": 1.2,
+      "h": 2.62,
+      "d": 1.2
+    },
+    "sourceUsd": "usd/Generic/generic_cdu_1200x2400.usd",
+    "sourceTriangles": 2770,
+    "nativeFront": "+x",
+    "frontDetection": "authored by generic_usd.py: service doors / fan section on USD +X; rear panels and connection stubs toward -X",
+    "footprintFrom": "geometry bounds",
+    "generated": true,
+    "generator": "tools/asset-pipeline/generic_build.py",
+    "licence": "Apache-2.0 (AIDC Studio original)",
+    "source": "parametric: tools/asset-pipeline/generic_spec.json (cdu); public standard facts listed in its \"sources\"",
+    "kind": "cdu",
+    "description": "Generic in-row CDU cabinet, 1200 mm frontage",
+    "usdMeshes": 22,
+    "lod1UsdMeshes": 22,
+    "lod1Generation": "explicit: generic_usd.build(lod=1) \u2014 same opaque bodies and faceplates as LOD0; proud details as quads; no decimation",
+    "catalogDims": {
+      "w": 1.2,
+      "d": 1.2,
+      "h": 2.4
+    },
+    "doors": 2,
+    "occlusion": {
+      "check": "tools/asset-pipeline/generic_occlusion.py",
+      "rays": {
+        "generic_cdu_1200x2400.glb": {
+          "front": {
+            "rays": 129024,
+            "fail": 0,
+            "maxFirstHitDepthMm": 12.0
+          },
+          "rear": {
+            "rays": 129024,
+            "fail": 0,
+            "maxFirstHitDepthMm": 12.0
+          }
+        },
+        "generic_cdu_1200x2400_lod1.glb": {
+          "front": {
+            "rays": 129024,
+            "fail": 0,
+            "maxFirstHitDepthMm": 12.0
+          },
+          "rear": {
+            "rays": 129024,
+            "fail": 0,
+            "maxFirstHitDepthMm": 12.0
+          }
+        }
+      },
+      "glMagentaPx": {
+        "generic_cdu_1200x2400.glb:front": 0,
+        "generic_cdu_1200x2400.glb:rear": 0,
+        "generic_cdu_1200x2400_lod1.glb:front": 0,
+        "generic_cdu_1200x2400_lod1.glb:rear": 0
+      }
+    },
+    "thumbnail": "thumbs/generic_cdu_1200x2400.png",
+    "license": "Apache-2.0 (AIDC Studio original)"
+  },
+  {
+    "name": "generic_cdu_900x2122",
+    "file": "generic_cdu_900x2122.glb",
+    "lod1": "generic_cdu_900x2122_lod1.glb",
+    "triangles": 1888,
+    "lod1Triangles": 690,
+    "bytes": 93780,
+    "lod1Bytes": 38344,
+    "measuredDims": {
+      "w": 0.9,
+      "h": 2.342,
+      "d": 1.243
+    },
+    "sourceUsd": "usd/Generic/generic_cdu_900x2122.usd",
+    "sourceTriangles": 1888,
+    "nativeFront": "+x",
+    "frontDetection": "authored by generic_usd.py: service doors / fan section on USD +X; rear panels and connection stubs toward -X",
+    "footprintFrom": "geometry bounds",
+    "generated": true,
+    "generator": "tools/asset-pipeline/generic_build.py",
+    "licence": "Apache-2.0 (AIDC Studio original)",
+    "source": "parametric: tools/asset-pipeline/generic_spec.json (cdu); public standard facts listed in its \"sources\"",
+    "kind": "cdu",
+    "description": "Generic in-row CDU cabinet, 900 mm frontage",
+    "usdMeshes": 22,
+    "lod1UsdMeshes": 22,
+    "lod1Generation": "explicit: generic_usd.build(lod=1) \u2014 same opaque bodies and faceplates as LOD0; proud details as quads; no decimation",
+    "catalogDims": {
+      "w": 0.9,
+      "d": 1.243,
+      "h": 2.122
+    },
+    "doors": 1,
+    "occlusion": {
+      "check": "tools/asset-pipeline/generic_occlusion.py",
+      "rays": {
+        "generic_cdu_900x2122.glb": {
+          "front": {
+            "rays": 129024,
+            "fail": 0,
+            "maxFirstHitDepthMm": 12.0
+          },
+          "rear": {
+            "rays": 129024,
+            "fail": 0,
+            "maxFirstHitDepthMm": 12.0
+          }
+        },
+        "generic_cdu_900x2122_lod1.glb": {
+          "front": {
+            "rays": 129024,
+            "fail": 0,
+            "maxFirstHitDepthMm": 12.0
+          },
+          "rear": {
+            "rays": 129024,
+            "fail": 0,
+            "maxFirstHitDepthMm": 12.0
+          }
+        }
+      },
+      "glMagentaPx": {
+        "generic_cdu_900x2122.glb:front": 0,
+        "generic_cdu_900x2122.glb:rear": 0,
+        "generic_cdu_900x2122_lod1.glb:front": 0,
+        "generic_cdu_900x2122_lod1.glb:rear": 0
+      }
+    },
+    "license": "Apache-2.0 (AIDC Studio original)",
+    "thumbnail": "thumbs/generic_cdu_900x2122.png"
+  },
+  {
+    "name": "generic_crah_2515x1829",
+    "file": "generic_crah_2515x1829.glb",
+    "lod1": "generic_crah_2515x1829_lod1.glb",
+    "triangles": 3652,
+    "lod1Triangles": 698,
+    "bytes": 194940,
+    "lod1Bytes": 41624,
+    "measuredDims": {
+      "w": 2.515,
+      "h": 1.836,
+      "d": 0.891
+    },
+    "sourceUsd": "usd/Generic/generic_crah_2515x1829.usd",
+    "sourceTriangles": 3652,
+    "nativeFront": "+x",
+    "frontDetection": "authored by generic_usd.py: service doors / fan section on USD +X; rear panels and connection stubs toward -X",
+    "footprintFrom": "geometry bounds",
+    "generated": true,
+    "generator": "tools/asset-pipeline/generic_build.py",
+    "licence": "Apache-2.0 (AIDC Studio original)",
+    "source": "parametric: tools/asset-pipeline/generic_spec.json (crah); public standard facts listed in its \"sources\"",
+    "kind": "crah",
+    "description": "Generic perimeter CRAH, 2515 mm frontage",
+    "usdMeshes": 22,
+    "lod1UsdMeshes": 21,
+    "lod1Generation": "explicit: generic_usd.build(lod=1) \u2014 same opaque bodies and faceplates as LOD0; proud details as quads; no decimation",
+    "catalogDims": {
+      "w": 2.515,
+      "d": 0.889,
+      "h": 1.829
+    },
+    "doors": 3,
+    "fans": 3,
+    "fanRows": 1,
+    "occlusion": {
+      "check": "tools/asset-pipeline/generic_occlusion.py",
+      "rays": {
+        "generic_crah_2515x1829.glb": {
+          "front": {
+            "rays": 129024,
+            "fail": 0,
+            "maxFirstHitDepthMm": 16.0
+          },
+          "rear": {
+            "rays": 129024,
+            "fail": 0,
+            "maxFirstHitDepthMm": 14.0
+          }
+        },
+        "generic_crah_2515x1829_lod1.glb": {
+          "front": {
+            "rays": 129024,
+            "fail": 0,
+            "maxFirstHitDepthMm": 16.0
+          },
+          "rear": {
+            "rays": 129024,
+            "fail": 0,
+            "maxFirstHitDepthMm": 14.0
+          }
+        }
+      },
+      "glMagentaPx": {
+        "generic_crah_2515x1829.glb:front": 0,
+        "generic_crah_2515x1829.glb:rear": 0,
+        "generic_crah_2515x1829_lod1.glb:front": 0,
+        "generic_crah_2515x1829_lod1.glb:rear": 0
+      }
+    },
+    "thumbnail": "thumbs/generic_crah_2515x1829.png",
+    "license": "Apache-2.0 (AIDC Studio original)"
+  },
+  {
+    "name": "generic_crah_3050x3407",
+    "file": "generic_crah_3050x3407.glb",
+    "lod1": "generic_crah_3050x3407_lod1.glb",
+    "triangles": 4872,
+    "lod1Triangles": 844,
+    "bytes": 257388,
+    "lod1Bytes": 48104,
+    "measuredDims": {
+      "w": 3.05,
+      "h": 3.414,
+      "d": 1.152
+    },
+    "sourceUsd": "usd/Generic/generic_crah_3050x3407.usd",
+    "sourceTriangles": 4872,
+    "nativeFront": "+x",
+    "frontDetection": "authored by generic_usd.py: service doors / fan section on USD +X; rear panels and connection stubs toward -X",
+    "footprintFrom": "geometry bounds",
+    "generated": true,
+    "generator": "tools/asset-pipeline/generic_build.py",
+    "licence": "Apache-2.0 (AIDC Studio original)",
+    "source": "parametric: tools/asset-pipeline/generic_spec.json (crah); public standard facts listed in its \"sources\"",
+    "kind": "crah",
+    "description": "Generic large perimeter CRAH, 3050 mm frontage, tall",
+    "usdMeshes": 22,
+    "lod1UsdMeshes": 21,
+    "lod1Generation": "explicit: generic_usd.build(lod=1) \u2014 same opaque bodies and faceplates as LOD0; proud details as quads; no decimation",
+    "catalogDims": {
+      "w": 3.05,
+      "d": 1.15,
+      "h": 3.407
+    },
+    "doors": 3,
+    "fans": 4,
+    "fanRows": 1,
+    "occlusion": {
+      "check": "tools/asset-pipeline/generic_occlusion.py",
+      "rays": {
+        "generic_crah_3050x3407.glb": {
+          "front": {
+            "rays": 129024,
+            "fail": 0,
+            "maxFirstHitDepthMm": 16.0
+          },
+          "rear": {
+            "rays": 129024,
+            "fail": 0,
+            "maxFirstHitDepthMm": 14.0
+          }
+        },
+        "generic_crah_3050x3407_lod1.glb": {
+          "front": {
+            "rays": 129024,
+            "fail": 0,
+            "maxFirstHitDepthMm": 16.0
+          },
+          "rear": {
+            "rays": 129024,
+            "fail": 0,
+            "maxFirstHitDepthMm": 14.0
+          }
+        }
+      },
+      "glMagentaPx": {
+        "generic_crah_3050x3407.glb:front": 0,
+        "generic_crah_3050x3407.glb:rear": 0,
+        "generic_crah_3050x3407_lod1.glb:front": 0,
+        "generic_crah_3050x3407_lod1.glb:rear": 0
+      }
+    },
+    "thumbnail": "thumbs/generic_crah_3050x3407.png",
+    "license": "Apache-2.0 (AIDC Studio original)"
+  },
+  {
+    "name": "generic_crah_3099x2388",
+    "file": "generic_crah_3099x2388.glb",
+    "lod1": "generic_crah_3099x2388_lod1.glb",
+    "triangles": 4668,
+    "lod1Triangles": 844,
+    "bytes": 246372,
+    "lod1Bytes": 48104,
+    "measuredDims": {
+      "w": 3.099,
+      "h": 2.395,
+      "d": 1.069
+    },
+    "sourceUsd": "usd/Generic/generic_crah_3099x2388.usd",
+    "sourceTriangles": 4668,
+    "nativeFront": "+x",
+    "frontDetection": "authored by generic_usd.py: service doors / fan section on USD +X; rear panels and connection stubs toward -X",
+    "footprintFrom": "geometry bounds",
+    "generated": true,
+    "generator": "tools/asset-pipeline/generic_build.py",
+    "licence": "Apache-2.0 (AIDC Studio original)",
+    "source": "parametric: tools/asset-pipeline/generic_spec.json (crah); public standard facts listed in its \"sources\"",
+    "kind": "crah",
+    "description": "Generic perimeter CRAH, 3099 mm frontage",
+    "usdMeshes": 22,
+    "lod1UsdMeshes": 21,
+    "lod1Generation": "explicit: generic_usd.build(lod=1) \u2014 same opaque bodies and faceplates as LOD0; proud details as quads; no decimation",
+    "catalogDims": {
+      "w": 3.099,
+      "d": 1.067,
+      "h": 2.388
+    },
+    "doors": 3,
+    "fans": 4,
+    "fanRows": 1,
+    "occlusion": {
+      "check": "tools/asset-pipeline/generic_occlusion.py",
+      "rays": {
+        "generic_crah_3099x2388.glb": {
+          "front": {
+            "rays": 129024,
+            "fail": 0,
+            "maxFirstHitDepthMm": 16.0
+          },
+          "rear": {
+            "rays": 129024,
+            "fail": 0,
+            "maxFirstHitDepthMm": 14.0
+          }
+        },
+        "generic_crah_3099x2388_lod1.glb": {
+          "front": {
+            "rays": 129024,
+            "fail": 0,
+            "maxFirstHitDepthMm": 16.0
+          },
+          "rear": {
+            "rays": 129024,
+            "fail": 0,
+            "maxFirstHitDepthMm": 14.0
+          }
+        }
+      },
+      "glMagentaPx": {
+        "generic_crah_3099x2388.glb:front": 0,
+        "generic_crah_3099x2388.glb:rear": 0,
+        "generic_crah_3099x2388_lod1.glb:front": 0,
+        "generic_crah_3099x2388_lod1.glb:rear": 0
+      }
+    },
+    "thumbnail": "thumbs/generic_crah_3099x2388.png",
+    "license": "Apache-2.0 (AIDC Studio original)"
+  },
+  {
+    "name": "generic_fanwall_3600x3000",
+    "file": "generic_fanwall_3600x3000.glb",
+    "lod1": "generic_fanwall_3600x3000_lod1.glb",
+    "triangles": 7690,
+    "lod1Triangles": 1396,
+    "bytes": 395900,
+    "lod1Bytes": 72324,
+    "measuredDims": {
+      "w": 3.6,
+      "h": 3.007,
+      "d": 1.502
+    },
+    "sourceUsd": "usd/Generic/generic_fanwall_3600x3000.usd",
+    "sourceTriangles": 7690,
+    "nativeFront": "+x",
+    "frontDetection": "authored by generic_usd.py: service doors / fan section on USD +X; rear panels and connection stubs toward -X",
+    "footprintFrom": "geometry bounds",
+    "generated": true,
+    "generator": "tools/asset-pipeline/generic_build.py",
+    "licence": "Apache-2.0 (AIDC Studio original)",
+    "source": "parametric: tools/asset-pipeline/generic_spec.json (crah); public standard facts listed in its \"sources\"",
+    "kind": "fan-wall",
+    "description": "Generic fan-wall unit, 3600 mm frontage, two fan rows",
+    "usdMeshes": 22,
+    "lod1UsdMeshes": 21,
+    "lod1Generation": "explicit: generic_usd.build(lod=1) \u2014 same opaque bodies and faceplates as LOD0; proud details as quads; no decimation",
+    "catalogDims": {
+      "w": 3.6,
+      "d": 1.5,
+      "h": 3.0
+    },
+    "doors": 4,
+    "fans": 8,
+    "fanRows": 2,
+    "occlusion": {
+      "check": "tools/asset-pipeline/generic_occlusion.py",
+      "rays": {
+        "generic_fanwall_3600x3000.glb": {
+          "front": {
+            "rays": 129024,
+            "fail": 0,
+            "maxFirstHitDepthMm": 16.0
+          },
+          "rear": {
+            "rays": 129024,
+            "fail": 0,
+            "maxFirstHitDepthMm": 14.0
+          }
+        },
+        "generic_fanwall_3600x3000_lod1.glb": {
+          "front": {
+            "rays": 129024,
+            "fail": 0,
+            "maxFirstHitDepthMm": 16.0
+          },
+          "rear": {
+            "rays": 129024,
+            "fail": 0,
+            "maxFirstHitDepthMm": 14.0
+          }
+        }
+      },
+      "glMagentaPx": {
+        "generic_fanwall_3600x3000.glb:front": 0,
+        "generic_fanwall_3600x3000.glb:rear": 0,
+        "generic_fanwall_3600x3000_lod1.glb:front": 0,
+        "generic_fanwall_3600x3000_lod1.glb:rear": 0
+      }
+    },
+    "thumbnail": "thumbs/generic_fanwall_3600x3000.png",
+    "license": "Apache-2.0 (AIDC Studio original)"
+  },
+  {
+    "name": "generic_rack_eia48_dlc",
+    "file": "generic_rack_eia48_dlc.glb",
+    "lod1": "generic_rack_eia48_dlc_lod1.glb",
+    "triangles": 9116,
+    "lod1Triangles": 1490,
+    "bytes": 502928,
+    "lod1Bytes": 93504,
+    "measuredDims": {
+      "w": 0.6,
+      "h": 2.3,
+      "d": 1.2
+    },
+    "sourceUsd": "usd/Generic/generic_rack_eia48_dlc.usd",
+    "sourceTriangles": 9116,
+    "nativeFront": "+x",
+    "frontDetection": "authored by generic_usd.py: tray faceplates and spt_airvent_intake on USD +X; busbar, manifold and spt_liq_* toward -X",
+    "footprintFrom": "geometry bounds",
+    "generated": true,
+    "generator": "tools/asset-pipeline/generic_build.py",
+    "licence": "Apache-2.0 (AIDC Studio original)",
+    "source": "parametric: tools/asset-pipeline/generic_spec.json (rack); public standard facts listed in its \"sources\"",
+    "kind": "rack",
+    "description": "Generic 48 U EIA-310 liquid-cooled rack-scale GPU rack (compute / switch bands, 8 power shelves, rear busbar + manifold)",
+    "usdMeshes": 200,
+    "lod1UsdMeshes": 152,
+    "lod1Generation": "explicit: generic_usd.build(lod=1) \u2014 same opaque bodies and faceplates as LOD0; proud details as quads; no decimation",
+    "catalogDims": {
+      "w": 0.6,
+      "d": 1.2,
+      "h": 2.3
+    },
+    "formFactor": "eia310-19-48u",
+    "layout": "rackscale-dlc-48u-72acc",
+    "units": 48,
+    "unit": "U",
+    "pitchMm": 44.45,
+    "bandCounts": {
+      "power": 8,
+      "compute": 18,
+      "switch": 9,
+      "mgmt": 2
+    },
+    "occlusion": {
+      "check": "tools/asset-pipeline/generic_occlusion.py",
+      "rays": {
+        "generic_rack_eia48_dlc.glb": {
+          "front": {
+            "rays": 129024,
+            "fail": 0,
+            "maxFirstHitDepthMm": 72.0
+          },
+          "rear": {
+            "rays": 129024,
+            "fail": 0,
+            "maxFirstHitDepthMm": 120.0
+          }
+        },
+        "generic_rack_eia48_dlc_lod1.glb": {
+          "front": {
+            "rays": 129024,
+            "fail": 0,
+            "maxFirstHitDepthMm": 72.0
+          },
+          "rear": {
+            "rays": 129024,
+            "fail": 0,
+            "maxFirstHitDepthMm": 120.0
+          }
+        }
+      },
+      "glMagentaPx": {
+        "generic_rack_eia48_dlc.glb:front": 0,
+        "generic_rack_eia48_dlc.glb:rear": 0,
+        "generic_rack_eia48_dlc_lod1.glb:front": 0,
+        "generic_rack_eia48_dlc_lod1.glb:rear": 0
+      }
+    },
+    "thumbnail": "thumbs/generic_rack_eia48_dlc.png",
+    "license": "Apache-2.0 (AIDC Studio original)"
+  },
+  {
+    "name": "generic_rack_orv3_44ou_dlc",
+    "file": "generic_rack_orv3_44ou_dlc.glb",
+    "lod1": "generic_rack_orv3_44ou_dlc_lod1.glb",
+    "triangles": 7436,
+    "lod1Triangles": 1160,
+    "bytes": 411392,
+    "lod1Bytes": 74872,
+    "measuredDims": {
+      "w": 0.6,
+      "h": 2.3,
+      "d": 1.2
+    },
+    "sourceUsd": "usd/Generic/generic_rack_orv3_44ou_dlc.usd",
+    "sourceTriangles": 7436,
+    "nativeFront": "+x",
+    "frontDetection": "authored by generic_usd.py: tray faceplates and spt_airvent_intake on USD +X; busbar, manifold and spt_liq_* toward -X",
+    "footprintFrom": "geometry bounds",
+    "generated": true,
+    "generator": "tools/asset-pipeline/generic_build.py",
+    "licence": "Apache-2.0 (AIDC Studio original)",
+    "source": "parametric: tools/asset-pipeline/generic_spec.json (rack); public standard facts listed in its \"sources\"",
+    "kind": "rack",
+    "description": "Generic 21-inch OU rack, 44 OU, liquid-cooled (central power-shelf zone, rear 48 V busbar + manifold)",
+    "usdMeshes": 164,
+    "lod1UsdMeshes": 124,
+    "lod1Generation": "explicit: generic_usd.build(lod=1) \u2014 same opaque bodies and faceplates as LOD0; proud details as quads; no decimation",
+    "catalogDims": {
+      "w": 0.6,
+      "d": 1.2,
+      "h": 2.3
+    },
+    "formFactor": "orv3-21-44ou",
+    "layout": "rackscale-dlc-orv3-44ou",
+    "units": 44,
+    "unit": "OU",
+    "pitchMm": 48,
+    "bandCounts": {
+      "compute": 16,
+      "switch": 8,
+      "power": 4,
+      "mgmt": 2
+    },
+    "occlusion": {
+      "check": "tools/asset-pipeline/generic_occlusion.py",
+      "rays": {
+        "generic_rack_orv3_44ou_dlc.glb": {
+          "front": {
+            "rays": 129024,
+            "fail": 0,
+            "maxFirstHitDepthMm": 59.5
+          },
+          "rear": {
+            "rays": 129024,
+            "fail": 0,
+            "maxFirstHitDepthMm": 120.0
+          }
+        },
+        "generic_rack_orv3_44ou_dlc_lod1.glb": {
+          "front": {
+            "rays": 129024,
+            "fail": 0,
+            "maxFirstHitDepthMm": 59.5
+          },
+          "rear": {
+            "rays": 129024,
+            "fail": 0,
+            "maxFirstHitDepthMm": 120.0
+          }
+        }
+      },
+      "glMagentaPx": {
+        "generic_rack_orv3_44ou_dlc.glb:front": 0,
+        "generic_rack_orv3_44ou_dlc.glb:rear": 0,
+        "generic_rack_orv3_44ou_dlc_lod1.glb:front": 0,
+        "generic_rack_orv3_44ou_dlc_lod1.glb:rear": 0
+      }
+    },
+    "thumbnail": "thumbs/generic_rack_orv3_44ou_dlc.png",
+    "license": "Apache-2.0 (AIDC Studio original)"
+  },
+  {
+    "name": "generic_rack_orw_44ou_dlc",
+    "file": "generic_rack_orw_44ou_dlc.glb",
+    "lod1": "generic_rack_orw_44ou_dlc_lod1.glb",
+    "triangles": 16848,
+    "lod1Triangles": 2420,
+    "bytes": 920484,
+    "lod1Bytes": 143744,
+    "measuredDims": {
+      "w": 1.2,
+      "h": 2.39,
+      "d": 1.221
+    },
+    "sourceUsd": "usd/Generic/generic_rack_orw_44ou_dlc.usd",
+    "sourceTriangles": 16848,
+    "nativeFront": "+x",
+    "frontDetection": "authored by generic_usd.py: tray faceplates and spt_airvent_intake on USD +X; busbar, manifold and spt_liq_* toward -X",
+    "footprintFrom": "geometry bounds",
+    "generated": true,
+    "generator": "tools/asset-pipeline/generic_build.py",
+    "licence": "Apache-2.0 (AIDC Studio original)",
+    "source": "parametric: tools/asset-pipeline/generic_spec.json (rack); public standard facts listed in its \"sources\"",
+    "kind": "rack",
+    "description": "Generic wide OU rack, 44 OU (1200 x 1219 mm), liquid-cooled rack-scale configuration: 18 compute / 9 switch / 8 power trays, busbar at the datum depth, rear manifold, forklift base",
+    "usdMeshes": 201,
+    "lod1UsdMeshes": 153,
+    "lod1Generation": "explicit: generic_usd.build(lod=1) \u2014 same opaque bodies and faceplates as LOD0; proud details as quads; no decimation",
+    "catalogDims": {
+      "w": 1.2,
+      "d": 1.219,
+      "h": 2.39
+    },
+    "formFactor": "orw-wide-44ou",
+    "layout": "rackscale-dlc-orw-44ou",
+    "units": 44,
+    "unit": "OU",
+    "pitchMm": 48,
+    "bandCounts": {
+      "power": 8,
+      "compute": 18,
+      "switch": 9,
+      "mgmt": 2
+    },
+    "occlusion": {
+      "check": "tools/asset-pipeline/generic_occlusion.py",
+      "rays": {
+        "generic_rack_orw_44ou_dlc.glb": {
+          "front": {
+            "rays": 129024,
+            "fail": 0,
+            "maxFirstHitDepthMm": 77.8
+          },
+          "rear": {
+            "rays": 129024,
+            "fail": 0,
+            "maxFirstHitDepthMm": 120.8
+          }
+        },
+        "generic_rack_orw_44ou_dlc_lod1.glb": {
+          "front": {
+            "rays": 129024,
+            "fail": 0,
+            "maxFirstHitDepthMm": 77.8
+          },
+          "rear": {
+            "rays": 129024,
+            "fail": 0,
+            "maxFirstHitDepthMm": 120.8
+          }
+        }
+      },
+      "glMagentaPx": {
+        "generic_rack_orw_44ou_dlc.glb:front": 0,
+        "generic_rack_orw_44ou_dlc.glb:rear": 0,
+        "generic_rack_orw_44ou_dlc_lod1.glb:front": 0,
+        "generic_rack_orw_44ou_dlc_lod1.glb:rear": 0
+      }
+    },
+    "license": "Apache-2.0 (AIDC Studio original)",
+    "thumbnail": "thumbs/generic_rack_orw_44ou_dlc.png"
+  }
+]

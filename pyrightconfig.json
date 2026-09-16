@@ -1,0 +1,11 @@
+{
+  "include": ["tools/asset-pipeline"],
+  "exclude": ["**/node_modules", "**/__pycache__", "tools/asset-pipeline/.venv"],
+  "executionEnvironments": [
+    { "root": "tools/asset-pipeline", "extraPaths": ["tools/asset-pipeline"] }
+  ],
+  "venvPath": "tools/asset-pipeline",
+  "venv": ".venv",
+  "pythonVersion": "3.12",
+  "reportMissingModuleSource": "warning"
+}

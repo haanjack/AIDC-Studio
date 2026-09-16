@@ -1,0 +1,30 @@
+{
+ "input": "417a42931946d8baf9a5fe9ac3b1495cf2ef5b9f8b096c505633ded9da96bc19",
+ "number": "611-H1",
+ "kind": "one-line",
+ "paper": {
+  "w": 841,
+  "h": 594
+ },
+ "scale": "NTS",
+ "viewports": 0,
+ "layers": {
+  "notes": 109,
+  "electrical-rooms": 60,
+  "circuits": 184
+ },
+ "tags": [],
+ "dimensions": [],
+ "keynotes": [],
+ "minTextMm": 1.8,
+ "attrs": {
+  "tapoff": 0,
+  "rcu": 0,
+  "gapAfter": 0,
+  "door": 0,
+  "fold": 36,
+  "block": 3,
+  "hall": 0,
+  "unsleeved": 0
+ }
+}

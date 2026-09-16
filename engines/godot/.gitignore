@@ -1,0 +1,5 @@
+.godot/
+*.import
+models/*.glb
+layout.json
+scene.tscn

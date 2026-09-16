@@ -1,0 +1,15 @@
+{
+  "note": "Canonical NVIDIA vendor sample after removal of the anonymous centre-gap setting (2026-09-16). projectSha is sha256 of JSON.stringify(project without createdAt/updatedAt) with name = legacyName.",
+  "name": "NVIDIA reference",
+  "legacyName": "Reference AI Factory — GB300 NVL72",
+  "id": "ref-gb300-hall",
+  "projectSha": "e0cd28f6fac40fb44a76f20b143003a8459d84d927df5486e3e90142c6032102",
+  "pods": 6,
+  "equipment": 157,
+  "gpus": 6912,
+  "racks": 135,
+  "itKW": 12875.582,
+  "pue": 1.14249,
+  "capexUSD": 561746828,
+  "issues": []
+}

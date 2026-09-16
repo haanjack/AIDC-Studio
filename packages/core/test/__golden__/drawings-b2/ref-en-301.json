@@ -1,0 +1,144 @@
+{
+  "input": "edf925313a2ee423b7e5ca6e5dc9453fc4081cc47279d422ce5523735613f965",
+  "structure": {
+    "number": "301-H1-T01",
+    "kind": "section",
+    "paper": {
+      "w": 841,
+      "h": 594
+    },
+    "scale": "1:50",
+    "layers": {
+      "view-title": 5,
+      "feeders": 18,
+      "walls": 2,
+      "sleeves": 1,
+      "slab": 2,
+      "ceiling": 2,
+      "lights": 2,
+      "racks": 8,
+      "containment": 4,
+      "containment-roof": 4,
+      "busway-a": 4,
+      "busway-b": 4,
+      "tapoffs": 16,
+      "circuits": 16,
+      "electrical-rooms": 1,
+      "tray-t1": 4,
+      "drops": 4,
+      "pipes": 16,
+      "pipe-fittings": 12,
+      "tags": 4,
+      "position-tags": 4,
+      "dimensions": 25,
+      "datums": 97,
+      "keynotes": 80,
+      "clearances": 12,
+      "key-plan": 22,
+      "panel-keynotes": 44,
+      "panel-clearances": 5,
+      "panel-notes": 8
+    },
+    "tags": [
+      "A05",
+      "B05",
+      "DU01-A-05",
+      "DU01-B-05"
+    ],
+    "dimensions": [
+      "2.38",
+      "2.00",
+      "0.40",
+      "0.35",
+      "0.35",
+      "2.30",
+      "1.20",
+      "2.22",
+      "1.20"
+    ],
+    "datums": [
+      "±0.00 FFL",
+      "+2.30 TOP OF CONTAINMENT",
+      "+2.30 TOP OF RACK",
+      "+2.52 TCS PIPE",
+      "+2.68 BUSWAY",
+      "+2.90 LADDER T1",
+      "+2.90 LIGHT STRIP",
+      "+3.25 LADDER T2",
+      "+3.60 LADDER T3",
+      "+4.00 MIN. HEADROOM ABOVE SERVICES",
+      "+6.00 CEILING",
+      "+6.00 TOP OF CHIMNEY",
+      "+8.38 UNDERSIDE OF DECK",
+      "+2.30 TOP OF CONTAINMENT",
+      "+2.30 TOP OF RACK",
+      "+2.52 TCS PIPE",
+      "+2.68 BUSWAY",
+      "+2.90 LADDER T1",
+      "+2.90 LIGHT STRIP",
+      "+3.25 LADDER T2",
+      "+3.60 LADDER T3",
+      "+4.00 MIN. HEADROOM ABOVE SERVICES"
+    ],
+    "keynotes": [
+      "01",
+      "03",
+      "04",
+      "10",
+      "11",
+      "12",
+      "13",
+      "20",
+      "23",
+      "30",
+      "31",
+      "33",
+      "41",
+      "50"
+    ],
+    "clearances": [
+      "rack-services:ok",
+      "services-ceiling:ok",
+      "light-height:ok"
+    ],
+    "doorTypes": [],
+    "openBeyond": 0,
+    "breaks": [],
+    "runs": 0,
+    "fittings": {},
+    "viewports": [
+      {
+        "space": "section",
+        "mmPerM": 20,
+        "paperRect": {
+          "x": 150.848,
+          "y": 48,
+          "w": 321.304,
+          "h": 219.6
+        },
+        "cut": {
+          "axis": "x",
+          "at": 10.2,
+          "look": 1,
+          "depthM": 0.6
+        }
+      },
+      {
+        "space": "section",
+        "mmPerM": 50,
+        "paperRect": {
+          "x": 114,
+          "y": 279.6,
+          "w": 395,
+          "h": 154.8
+        },
+        "cut": {
+          "axis": "x",
+          "at": 10.2,
+          "look": 1,
+          "depthM": 0.6
+        }
+      }
+    ]
+  }
+}

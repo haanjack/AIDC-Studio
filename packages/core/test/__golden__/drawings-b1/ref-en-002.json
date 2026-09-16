@@ -1,0 +1,41 @@
+{
+ "input": "417a42931946d8baf9a5fe9ac3b1495cf2ef5b9f8b096c505633ded9da96bc19",
+ "number": "002",
+ "kind": "site",
+ "paper": {
+  "w": 841,
+  "h": 594
+ },
+ "scale": "1:200",
+ "viewports": 0,
+ "layers": {
+  "notes": 50,
+  "hall-outline": 2,
+  "racks": 5,
+  "electrical-rooms": 4,
+  "dimensions": 6,
+  "tags": 5
+ },
+ "tags": [
+  "6,912 GPUs · 135 Racks",
+  "Data Hall A",
+  "Data Hall B (Phase 2)",
+  "IT 12.9 MW",
+  "no IT equipment"
+ ],
+ "dimensions": [
+  "12.00 m"
+ ],
+ "keynotes": [],
+ "minTextMm": 1.8,
+ "attrs": {
+  "tapoff": 0,
+  "rcu": 0,
+  "gapAfter": 0,
+  "door": 0,
+  "fold": 0,
+  "block": 0,
+  "hall": 2,
+  "unsleeved": 0
+ }
+}

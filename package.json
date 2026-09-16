@@ -1,0 +1,26 @@
+{
+  "name": "aidc-studio",
+  "private": true,
+  "license": "Apache-2.0",
+  "version": "0.1.0",
+  "description": "Vendor-neutral AI data centre planning, design, simulation and deployment studio (OS-independent, web-first)",
+  "type": "module",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "dev": "npm run dev -w @aidc/web",
+    "server": "npm run start -w @aidc/server",
+    "build": "npm run build -w @aidc/web",
+    "test": "vitest run",
+    "typecheck": "tsc -p packages/core && tsc -p packages/thermal && tsc -p apps/web --noEmit && tsc -p apps/server --noEmit",
+    "assets": "python3 tools/asset-pipeline/build_all.py"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.2",
+    "tsx": "^4.23.13",
+    "typescript": "^5.9.3",
+    "vitest": "^5.0.0"
+  }
+}
