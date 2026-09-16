@@ -6,6 +6,24 @@ The application is web-first and independent of the host operating system or GPU
 
 > AIDC Studio supports early planning, option comparison, and design coordination. Its CFD-lite, power, network, cost, and schedule models do not replace final engineering analysis, authority review, or vendor-certified design.
 
+## Product tour
+
+<p align="center">
+  <img src="docs/images/overview-3d.png" alt="AIDC Studio project overview beside the coordinated 3D data-hall model" width="100%">
+</p>
+<p align="center"><sub>Project KPIs, validation, equipment, and the coordinated hall model remain visible in one workspace.</sub></p>
+
+<table>
+  <tr>
+    <td width="50%"><img src="docs/images/cooling-airflow.png" alt="Cooling design panel with supply, hot-air rise, and return-path overlays"></td>
+    <td width="50%"><img src="docs/images/engineering-drawings.png" alt="Generated engineering drawing-set index and printable sheet preview"></td>
+  </tr>
+  <tr>
+    <td align="center"><sub>Explicit supply and return-air design paths, ready to compare with CFD-lite results.</sub></td>
+    <td align="center"><sub>Coordinated drawing sets with plans, sections, elevations, isometrics, and system diagrams.</sub></td>
+  </tr>
+</table>
+
 ## What it does
 
 - Builds a site and server-hall model from utility, space, floor-loading, environmental, and availability constraints.
