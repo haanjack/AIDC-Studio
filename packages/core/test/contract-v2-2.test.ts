@@ -26,11 +26,14 @@ describe('v2 2차 contract', () => {
   });
 
   it('model presets and benchmarks are copied from r2-model-presets.json', () => {
-    expect(MODEL_PRESETS).toHaveLength(16);
+    expect(MODEL_PRESETS).toHaveLength(24);
     expect(BENCHMARKS).toHaveLength(15);
     const ds = findModelPreset('deepseek-v3')!;
     expect(ds).toMatchObject({ kind: 'moe', paramsB: 671, activeParamsB: 37, layers: 61, hiddenSize: 7168, vocab: 129280, moe: { experts: 256, topK: 8, shared: 1, denseLayers: 3 }, mla: { dLatent: 512, dRope: 64 } });
     expect(findModelPreset('qwen3-235b-a22b')?.headDim).toBe(128);
+    for (const id of ['glm-5.2', 'kimi-k2.5', 'kimi-k3', 'minimax-m3', 'deepseek-v4-pro', 'deepseek-v4-flash', 'qwen3.5-122b-a10b', 'qwen3.5-35b-a3b', 'deepseek-r1', 'llama3.1-70b']) {
+      expect(findModelPreset(id), id).toBeDefined();
+    }
     expect(new Set(MODEL_PRESETS.map((p) => p.id)).size).toBe(MODEL_PRESETS.length);
     expect(new Set(BENCHMARKS.map((b) => b.id)).size).toBe(BENCHMARKS.length);
     // every row cites a source (URL, or a local research note for user-supplied PDFs such as the AMD RA)

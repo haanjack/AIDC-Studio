@@ -1,8 +1,9 @@
-import type { CatalogItem, PowerAnalysis, TrafficReport, WorkloadAnalysis, WorkloadBlueprint, WorkloadTimePoint } from '../model/types.ts';
+import type { CatalogItem, InferenceParallelism, PowerAnalysis, TrafficReport, WorkloadAnalysis, WorkloadBlueprint, WorkloadTimePoint } from '../model/types.ts';
 import { clamp, type Ctx, hash32, mulberry32 } from './context.ts';
 import type { NetworkResult } from './network.ts';
-import { peakFlopsFor } from './traffic.ts';
+import { kvSeqEffective, moeLayerCount, peakFlopsFor } from './traffic.ts';
 import { effectiveShare, effectiveShares, shareState } from '../workload/shares.ts';
+import { inferenceMemoryEstimate, inferenceParallelismFor, inferenceReplicaGpus } from '../workload/inference.ts';
 
 /**
  * Workload blueprint simulation (analytical).
@@ -55,14 +56,15 @@ export interface WorkloadEnv {
 }
 
 export function workloadEnv(ctx: Ctx, net: NetworkResult, power: Pick<PowerAnalysis, 'pue'>): WorkloadEnv {
+  const traffic = net.analysis.traffic?.scope === 'aggregate' ? undefined : net.analysis.traffic;
   return {
     gpuRack: ctx.gpuRack,
     clusterGpus: jobClusterGpus(ctx, net),
     projectGpus: ctx.gpus,
     // v2: the workload-driven traffic engine (engines/traffic.ts) supplies the effective efficiency when a report exists;
     // the legacy fabric scalar is the fallback (projects without a training blueprint / GPU racks)
-    commEfficiency: net.analysis.traffic?.commEfficiencyEffective ?? net.analysis.commEfficiency,
-    traffic: net.analysis.traffic,
+    commEfficiency: traffic?.commEfficiencyEffective ?? net.analysis.commEfficiency,
+    traffic,
     networkKW: net.switchKW + net.analysis.transceiverKW,
     pue: power.pue || 1.2,
     electricityUSDPerKWh: ctx.project.site.electricityUSDPerKWh,
@@ -254,22 +256,91 @@ export function simulateInference(w: WorkloadBlueprint, env: WorkloadEnv): Workl
   };
   const gpus = Math.floor(clamp(w.gpuShare, 0, 1) * env.clusterGpus);
   const nActive = w.model.activeParamsB * 1e9;
-  const weightsGB = w.model.paramsB; // FP8: 1 byte / param
-  const activeGB = w.model.activeParamsB;
-  const usableMem = c.gpuMemoryGB * 0.9;
-  const minGpus = Math.max(1, Math.ceil((weightsGB * 1.2) / usableMem));
-  let g = 2 ** Math.ceil(Math.log2(Math.max(2, minGpus * 2)));
-  g = Math.min(g, Math.max(minGpus, c.scaleUp.domainSize));
-  if (gpus < g) return empty(w, `할당 GPU ${gpus}개가 모델 인스턴스 최소 크기(${g} GPU)보다 작습니다.`, `Allocated GPUs (${gpus}) are fewer than the minimum model instance (${g} GPUs).`);
+  const weightBytes = inf.weightPrecision === 'fp16' || inf.weightPrecision === 'bf16' ? 2 : inf.weightPrecision === 'fp4' ? 0.5 : 1;
+  const weightsGB = w.model.paramsB * weightBytes;
+  const activeGB = w.model.activeParamsB * weightBytes;
+  const baseTopology: InferenceParallelism = { tp: 1, pp: 1, ep: 1, cp: 1 };
+  const autoTp = inferenceMemoryEstimate(w, 'aggregated', baseTopology, c.gpuMemoryGB, c.scaleUp.domainSize)?.minimumTp ?? Math.max(1, c.scaleUp.domainSize);
+  const fallback: InferenceParallelism = { ...baseTopology, tp: autoTp };
+  const aggregated = inferenceParallelismFor(inf, 'aggregated', fallback);
+  const prefill = inferenceParallelismFor(inf, 'prefill', fallback);
+  const decode = inferenceParallelismFor(inf, 'decode', fallback);
+  const prefillGpus = inferenceReplicaGpus(prefill);
+  const decodeGpus = inferenceReplicaGpus(decode);
+  const minDeploymentGpus = inf.disaggregated ? prefillGpus + decodeGpus : decodeGpus;
+  const topo = (p: InferenceParallelism) => `TP${p.tp}·PP${p.pp}·EP${p.ep}·CP${p.cp}`;
+  const stagePlans: ['aggregated' | 'prefill' | 'decode', InferenceParallelism][] = inf.disaggregated
+    ? [['prefill', prefill], ['decode', decode]]
+    : [['aggregated', aggregated]];
+  const memoryPlans = stagePlans.map(([stage, p]) => inferenceMemoryEstimate(w, stage, p, c.gpuMemoryGB, c.scaleUp.domainSize)!);
+  const badMemory = memoryPlans.find((plan) => !plan.fits);
+  if (badMemory) {
+    const stage = badMemory.stage;
+    const p = badMemory.topology;
+    const minimum = badMemory.minimumTp ? ` 최소 TP${badMemory.minimumTp}` : ' 현재 PP/EP/CP 조합으로 산정 범위 내 해 없음';
+    return empty(
+      w,
+      `${stage} ${topo(p)}의 GPU당 메모리 추정치(가중치 ${badMemory.weightGBPerGpu.toFixed(1)} + 1개 시퀀스 KV ${badMemory.kvGBPerGpu.toFixed(1)} GB)가 가용 HBM ${badMemory.usableHbmGB.toFixed(1)} GB를 넘습니다.${minimum}; 필요하면 PP${w.model.moe ? '/EP' : ''} 또는 정밀도를 조정하세요.`,
+      `Estimated per-GPU memory for ${stage} ${topo(p)} (weights ${badMemory.weightGBPerGpu.toFixed(1)} + one-sequence KV ${badMemory.kvGBPerGpu.toFixed(1)} GB) exceeds ${badMemory.usableHbmGB.toFixed(1)} GB usable HBM.${badMemory.minimumTp ? ` Minimum TP${badMemory.minimumTp}` : ' No fit was found in the sizing range with the current PP/EP/CP'}; adjust PP${w.model.moe ? '/EP' : ''} or precision if needed.`,
+    );
+  }
+  if (gpus < minDeploymentGpus) return empty(w, `할당 GPU ${gpus}개가 최소 서빙 단위(${minDeploymentGpus} GPU)보다 작습니다.`, `Allocated GPUs (${gpus}) are fewer than the minimum serving unit (${minDeploymentGpus} GPUs).`);
+  if (!w.model.moe && (prefill.ep > 1 || decode.ep > 1)) note('Dense 모델에서 EP는 모델을 샤딩하지 않으므로 GPU만 추가하고 처리량 이점은 반영하지 않습니다.', 'EP does not shard a dense model; it only adds GPUs and no throughput benefit is credited.');
+  if (Math.max(prefillGpus, decodeGpus) > c.scaleUp.domainSize) note(`인스턴스가 scale-up 도메인(${c.scaleUp.domainSize} GPU)을 넘어 TP/PP/EP/CP 통신 일부가 scale-out으로 흐릅니다.`, `A replica exceeds the ${c.scaleUp.domainSize}-GPU scale-up domain; some TP/PP/EP/CP traffic uses scale-out.`);
+  note(
+    inf.disaggregated
+      ? `P/D 토폴로지: prefill ${topo(prefill)} = ${prefillGpus} GPU, decode ${topo(decode)} = ${decodeGpus} GPU.`
+      : `통합형 토폴로지: ${topo(aggregated)} = ${decodeGpus} GPU/인스턴스.`,
+    inf.disaggregated
+      ? `P/D topology: prefill ${topo(prefill)} = ${prefillGpus} GPUs, decode ${topo(decode)} = ${decodeGpus} GPUs.`
+      : `Aggregated topology: ${topo(aggregated)} = ${decodeGpus} GPUs per instance.`,
+  );
   // HBM bandwidth per GPU from the catalog (memBandwidthGBps); FLOPS-scaled proxy only for legacy items without it
-  const mbw = g * (c.memBandwidthGBps ?? (1300 * c.gpuFlopsPeak) / 2.3e15) * 0.85; // GB/s
-  const kvPerTokenGB = (2 * w.model.layers * w.model.hiddenSize * 0.125) / 1e9;
-  const kvSeqGB = kvPerTokenGB * (inf.inputTokens + inf.outputTokens / 2);
-  const flopsEff = g * c.gpuFlopsPeak * 1.3;
-  const kCompute = (2 * nActive) / (flopsEff * 0.5);
+  const perGpuMbw = c.memBandwidthGBps ?? (1300 * c.gpuFlopsPeak) / 2.3e15;
+  const effectiveStageGpus = (p: InferenceParallelism) => p.tp * p.pp * p.cp * (w.model.moe ? p.ep : 1);
+  const prefillEffectiveGpus = effectiveStageGpus(prefill);
+  const decodeEffectiveGpus = effectiveStageGpus(decode);
+  const decodeMbw = decodeEffectiveGpus * perGpuMbw * 0.85; // GB/s
+  const kvBytes = inf.kvPrecision === 'fp16' || inf.kvPrecision === 'bf16' ? 2 : inf.kvPrecision === 'fp4' ? 0.5 : 1;
+  const heads = Math.max(1, w.model.numHeads ?? Math.round(w.model.hiddenSize / 128));
+  const kvHeads = Math.max(1, w.model.kvHeads ?? heads);
+  const headDim = w.model.headDim && w.model.headDim > 0 ? w.model.headDim : w.model.hiddenSize / heads;
+  const kvLayerFraction = Math.min(1, Math.max(0, w.model.kvCacheLayerFraction ?? 1));
+  const kvPerTokenGB = w.model.mla
+    ? (w.model.layers * kvLayerFraction * (w.model.mla.dLatent + w.model.mla.dRope) * kvBytes) / 1e9
+    : (2 * w.model.layers * kvLayerFraction * kvHeads * headDim * kvBytes) / 1e9;
+  const kvTokens = w.model.mla ? inf.inputTokens + inf.outputTokens / 2 : kvSeqEffective(inf.inputTokens + inf.outputTokens / 2, w.model.attentionWindow, w.model.globalLayerInterval);
+  const kvSeqGB = kvPerTokenGB * kvTokens;
+  const prefillFlopsEff = prefillEffectiveGpus * c.gpuFlopsPeak * 1.3;
+  const decodeFlopsEff = decodeEffectiveGpus * c.gpuFlopsPeak * 1.3;
+  const soGbps = c.scaleOutPortGbps * c.scaleOutPortsPerGpu * env.commEfficiency;
+  const scaleUpBps = (c.scaleUp.gbpsPerGpu / 8 / 2) * 1e9 * 0.8;
+  const scaleOutBps = (soGbps / 8) * 1e9;
+  // Forward-pass communication estimate per generated/input token. Latency and kernel scheduling still require a benchmark calibration.
+  const stageCommS = (p: InferenceParallelism) => {
+    const L = Math.max(1, w.model.layers);
+    const h = Math.max(1, w.model.hiddenSize);
+    const tpBytes = p.tp > 1 ? 4 * L * h * 2 * ((p.tp - 1) / p.tp) : 0;
+    const cpBytes = p.cp > 1 ? 2 * L * h * kvBytes * ((p.cp - 1) / p.cp) : 0;
+    const ppBytes = p.pp > 1 ? (p.pp - 1) * h * 2 : 0;
+    const epBytes = w.model.moe && p.ep > 1 ? moeLayerCount(L, w.model.moe) * Math.max(1, w.model.moe.topK) * h * 3 * ((p.ep - 1) / p.ep) : 0;
+    const bytes = tpBytes + cpBytes + ppBytes + epBytes;
+    const inDomain = p.tp * p.cp * (w.model.moe ? p.ep : 1) <= c.scaleUp.domainSize;
+    const bw = inDomain ? scaleUpBps : scaleOutBps;
+    return bw > 0 ? bytes / bw : bytes > 0 ? Number.POSITIVE_INFINITY : 0;
+  };
+  const prefillCommSPerToken = stageCommS(prefill);
+  const decodeCommSPerToken = stageCommS(decode);
+  if (prefillCommSPerToken > 0 || decodeCommSPerToken > 0) note(
+    `병렬 통신 추정: prefill ${(prefillCommSPerToken * 1e6).toFixed(1)} µs/token, decode ${(decodeCommSPerToken * 1e6).toFixed(1)} µs/token (TP/PP/EP/CP 바이트와 ${Math.max(prefillGpus, decodeGpus) <= c.scaleUp.domainSize ? 'scale-up' : 'scale-out'} 유효 대역폭 기준).`,
+    `Estimated parallel communication: prefill ${(prefillCommSPerToken * 1e6).toFixed(1)} µs/token, decode ${(decodeCommSPerToken * 1e6).toFixed(1)} µs/token (TP/PP/EP/CP bytes and effective ${Math.max(prefillGpus, decodeGpus) <= c.scaleUp.domainSize ? 'scale-up' : 'scale-out'} bandwidth).`,
+  );
+  const kCompute = (2 * nActive) / (decodeFlopsEff * 0.5);
   const weightRead = (b: number) => Math.min(weightsGB, activeGB * (1 + 0.1 * Math.log2(1 + b)));
-  const tpot = (b: number) => weightRead(b) / mbw + b * (kvSeqGB / mbw + kCompute);
-  const bMem = Math.max(1, Math.floor((g * usableMem - weightsGB) / kvSeqGB));
+  const tpot = (b: number) => weightRead(b) / decodeMbw + b * (kvSeqGB / decodeMbw + kCompute + decodeCommSPerToken);
+  const decodeMemory = memoryPlans.find((plan) => plan.stage === 'decode' || plan.stage === 'aggregated')!;
+  const decodeFreeGBPerGpu = Math.max(0, decodeMemory.usableHbmGB - decodeMemory.weightGBPerGpu);
+  const bMem = Math.max(1, Math.floor(decodeFreeGBPerGpu / Math.max(1e-9, decodeMemory.kvGBPerGpu)));
   const slo = inf.tpotSloMs / 1000;
   let lo = 1;
   let hi = bMem;
@@ -284,25 +355,26 @@ export function simulateInference(w: WorkloadBlueprint, env: WorkloadEnv): Workl
   }
   const bStar = lo;
   const decodeRate = bStar / tpot(bStar);
-  const prefillRate = (flopsEff * 0.55) / (2 * nActive + 2 * w.model.layers * inf.inputTokens * w.model.hiddenSize);
+  const prefillComputeRate = (prefillFlopsEff * 0.55) / (2 * nActive + 2 * w.model.layers * inf.inputTokens * w.model.hiddenSize);
+  const prefillRate = 1 / (1 / prefillComputeRate + prefillCommSPerToken);
   const service = inf.inputTokens / prefillRate;
   const prefillDemand = inf.requestsPerSec * inf.inputTokens;
   const decodeDemand = inf.requestsPerSec * inf.outputTokens;
-  const soGbps = c.scaleOutPortGbps * c.scaleOutPortsPerGpu * env.commEfficiency;
-
-  let instances: number;
+  let prefillInstances = 0;
+  let decodeInstances = 0;
+  let aggregatedInstances = 0;
   let ttft: number;
   let tpotAct: number;
   if (inf.disaggregated) {
-    const np = Math.max(1, Math.ceil(prefillDemand / (prefillRate * 0.7)));
-    const nd = Math.max(1, Math.ceil(decodeDemand / decodeRate));
-    const rho = prefillDemand / (np * prefillRate);
-    const kvTransfer = soGbps > 0 ? (kvPerTokenGB * inf.inputTokens * 8) / (soGbps * Math.min(g, 8)) : 0;
+    prefillInstances = Math.max(1, Math.ceil(prefillDemand / (prefillRate * 0.7)));
+    decodeInstances = Math.max(1, Math.ceil(decodeDemand / decodeRate));
+    const rho = prefillDemand / (prefillInstances * prefillRate);
+    const pdGbps = soGbps * Math.max(1, Math.min(prefillGpus, decodeGpus));
+    const kvTransfer = pdGbps > 0 ? (kvPerTokenGB * inf.inputTokens * 8) / pdGbps : 0;
     ttft = service / Math.max(0.05, 1 - rho) + kvTransfer;
-    const bAct = Math.min(bStar, Math.max(1, (decodeDemand / nd) * tpot(bStar)));
+    const bAct = Math.min(bStar, Math.max(1, (decodeDemand / decodeInstances) * tpot(bStar)));
     tpotAct = tpot(bAct);
-    instances = np + nd;
-    note(`분리형(disaggregated) 서빙: prefill ${np} × ${g} GPU, decode ${nd} × ${g} GPU 인스턴스.`, `Disaggregated serving: ${np} prefill × ${g} GPU and ${nd} decode × ${g} GPU instances.`);
+    note(`분리형(disaggregated) 서빙: prefill ${prefillInstances} × ${prefillGpus} GPU, decode ${decodeInstances} × ${decodeGpus} GPU 인스턴스.`, `Disaggregated serving: ${prefillInstances} prefill × ${prefillGpus} GPU and ${decodeInstances} decode × ${decodeGpus} GPU instances.`);
   } else {
     let n = Math.max(1, Math.ceil(decodeDemand / decodeRate));
     let p = 0;
@@ -311,22 +383,25 @@ export function simulateInference(w: WorkloadBlueprint, env: WorkloadEnv): Workl
       if (p >= 0.6) continue;
       if (decodeDemand / n <= decodeRate * (1 - p) * 0.85) break;
     }
-    instances = n;
+    aggregatedInstances = n;
     ttft = (service / Math.max(0.05, 1 - p)) * 1.3;
     tpotAct = tpot(bStar) / Math.max(0.05, 1 - p);
-    note(`통합형 서빙: ${n} × ${g} GPU 인스턴스 (prefill 점유율 ${(p * 100).toFixed(0)}%).`, `Aggregated serving: ${n} × ${g} GPU instances (prefill share ${(p * 100).toFixed(0)} %).`);
+    note(`통합형 서빙: ${n} × ${decodeGpus} GPU 인스턴스 (prefill 점유율 ${(p * 100).toFixed(0)}%).`, `Aggregated serving: ${n} × ${decodeGpus} GPU instances (prefill share ${(p * 100).toFixed(0)} %).`);
   }
   // v2 2차 (T6, F9): a benchmark calibration (output tokens/s per GPU at the stated interactivity, workload/calibration.ts)
   // replaces the decode-capacity model for sizing: GPUs = requests/s × output tokens ÷ tok/s per GPU, whole instances
   const calTok = w.calibration?.mode === 'inference' && w.calibration.tokensPerSecPerGpu && w.calibration.tokensPerSecPerGpu > 0 ? w.calibration.tokensPerSecPerGpu : undefined;
   if (calTok) {
-    const modelInstances = instances;
-    instances = Math.max(1, Math.ceil(decodeDemand / (calTok * g)));
-    note(`벤치마크 보정: GPU당 출력 ${Math.round(calTok).toLocaleString('en-US')} tok/s → ${instances} × ${g} GPU 인스턴스 (보정 전 모델 ${modelInstances}개; ${w.calibration!.source}).`, `Benchmark calibration: ${Math.round(calTok).toLocaleString('en-US')} output tok/s per GPU → ${instances} × ${g} GPU instances (uncalibrated model ${modelInstances}; ${w.calibration!.source}).`);
+    const modelInstances = inf.disaggregated ? decodeInstances : aggregatedInstances;
+    const calibratedInstances = Math.max(1, Math.ceil(decodeDemand / (calTok * decodeGpus)));
+    if (inf.disaggregated) decodeInstances = calibratedInstances;
+    else aggregatedInstances = calibratedInstances;
+    note(`벤치마크 보정: GPU당 출력 ${Math.round(calTok).toLocaleString('en-US')} tok/s → decode ${calibratedInstances} × ${decodeGpus} GPU (보정 전 모델 ${modelInstances}개; ${w.calibration!.source}).`, `Benchmark calibration: ${Math.round(calTok).toLocaleString('en-US')} output tok/s per GPU → ${calibratedInstances} decode × ${decodeGpus} GPUs (uncalibrated model ${modelInstances}; ${w.calibration!.source}).`);
   }
-  const gpusRequired = instances * g;
-  const usable = Math.floor(gpus / g) * g;
-  const maxRequestsPerSec = (inf.requestsPerSec * usable) / gpusRequired;
+  const gpusRequired = inf.disaggregated
+    ? prefillInstances * prefillGpus + decodeInstances * decodeGpus
+    : aggregatedInstances * decodeGpus;
+  const maxRequestsPerSec = (inf.requestsPerSec * gpus) / Math.max(1, gpusRequired);
   if (gpusRequired > gpus) note(`목표 ${inf.requestsPerSec} req/s에는 GPU ${gpusRequired}개가 필요하지만 ${gpus}개만 할당되었습니다.`, `The target ${inf.requestsPerSec} req/s needs ${gpusRequired} GPUs but only ${gpus} are allocated.`);
   if (ttft * 1000 > inf.ttftSloMs) note(`예상 TTFT ${(ttft * 1000).toFixed(0)} ms가 SLO ${inf.ttftSloMs} ms를 초과합니다.`, `Predicted TTFT ${(ttft * 1000).toFixed(0)} ms exceeds the SLO ${inf.ttftSloMs} ms.`);
 
@@ -364,7 +439,26 @@ export function simulateInference(w: WorkloadBlueprint, env: WorkloadEnv): Workl
     powerTrace: trace,
     notes,
     notesEn,
-    details: { instanceGpus: g, maxBatch: bStar, decodeTokPerSecPerInstance: decodeRate, prefillTokPerSecPerInstance: prefillRate, memBandwidthGBps: mbw, kvPerSeqGB: kvSeqGB },
+    details: {
+      instanceGpus: decodeGpus,
+      prefillInstanceGpus: prefillGpus,
+      decodeInstanceGpus: decodeGpus,
+      prefillReplicas: prefillInstances,
+      decodeReplicas: inf.disaggregated ? decodeInstances : aggregatedInstances,
+      prefillTp: prefill.tp, prefillPp: prefill.pp, prefillEp: prefill.ep, prefillCp: prefill.cp,
+      decodeTp: decode.tp, decodePp: decode.pp, decodeEp: decode.ep, decodeCp: decode.cp,
+      maxBatch: bStar,
+      decodeTokPerSecPerInstance: decodeRate,
+      prefillTokPerSecPerInstance: prefillRate,
+      prefillCommUsPerToken: prefillCommSPerToken * 1e6,
+      decodeCommUsPerToken: decodeCommSPerToken * 1e6,
+      memBandwidthGBps: decodeMbw,
+      kvPerSeqGB: kvSeqGB,
+      weightGBPerGpu: decodeMemory.weightGBPerGpu,
+      kvGBPerGpuPerSequence: decodeMemory.kvGBPerGpu,
+      usableHbmGB: decodeMemory.usableHbmGB,
+      minimumTp: decodeMemory.minimumTp ?? 0,
+    },
   };
 }
 
@@ -404,14 +498,18 @@ export function simulateWorkload(w: WorkloadBlueprint, env: WorkloadEnv): Worklo
   }
 }
 
-export function analyzeWorkloadsCtx(ctx: Ctx, net: NetworkResult, power: Pick<PowerAnalysis, 'pue'>): WorkloadAnalysis[] {
+export function analyzeWorkloadsCtx(ctx: Ctx, net: NetworkResult, power: Pick<PowerAnalysis, 'pue'>, trafficByWorkload?: ReadonlyMap<string, TrafficReport>): WorkloadAnalysis[] {
   const env = workloadEnv(ctx, net, power);
   // v2 2차 (T6, F9): Σ gpuShare > 1 → every blueprint is analysed at s_i / S (stored values unchanged; validate raises
   // 'workload-share-over' through workload/shares.ts shareIssues)
   const { total, state } = shareState(ctx.project.workloads);
   const eff = effectiveShares(ctx.project.workloads);
   return eff.map((w, i) => {
-    const a = simulateWorkload(w, env);
+    const workloadTraffic = trafficByWorkload?.get(w.id);
+    const workloadEnv = workloadTraffic
+      ? { ...env, traffic: workloadTraffic, commEfficiency: workloadTraffic.commEfficiencyEffective }
+      : env;
+    const a = simulateWorkload(w, workloadEnv);
     if (state === 'over') {
       const s0 = ctx.project.workloads[i].gpuShare;
       a.notes.unshift(`GPU 비중 합계 ${(total * 100).toFixed(0)} % > 100 % — 이 워크로드는 ${(s0 * 100).toFixed(0)} % 대신 비례 축소한 ${(w.gpuShare * 100).toFixed(1)} %로 분석했습니다.`);

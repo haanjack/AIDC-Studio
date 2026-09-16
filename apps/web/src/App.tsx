@@ -43,15 +43,15 @@ type PageBodyMode = 'scroll' | 'fill';
 // label/title/sub are i18n keys (apps/web/src/i18n/locales/*/shell.ts)
 const PAGES: { id: PageId; label: string; icon: IconName; title: string; sub: string; bodyMode: PageBodyMode; render: () => ReactNode }[] = (
   [
-    ['overview', () => <OverviewPanel />], ['workload', () => <WorkloadPanel />], ['architecture', () => <ArchitecturePanel />], ['site', () => <SitePanel />],
-    ['layout', () => <LayoutPanel />], ['power', () => <PowerPanel />], ['network', () => <NetworkPanel />], ['cooling', () => <CoolingPanel />],
+    ['overview', () => <OverviewPanel />], ['architecture', () => <ArchitecturePanel />], ['site', () => <SitePanel />],
+    ['layout', () => <LayoutPanel />], ['workload', () => <WorkloadPanel />], ['power', () => <PowerPanel />], ['network', () => <NetworkPanel />], ['cooling', () => <CoolingPanel />],
     ['cost', () => <CostPanel />], ['schedule', () => <SchedulePanel />], ['drawings', () => <DrawingsPanel />], ['docs', () => <DocsPanel />],
     ['catalog', () => <CatalogPanel />],
   ] as [PageId, () => ReactNode][]
 ).map(([id, render]) => ({ id, label: `shell.nav.${id}`, icon: id as IconName, title: `shell.page.${id}.title`, sub: `shell.page.${id}.sub`, bodyMode: (id === 'drawings' ? 'fill' : 'scroll') as PageBodyMode, render }));
 
 const LOCALES: { value: Locale; label: string }[] = [{ value: 'en', label: 'EN' }, { value: 'ko', label: 'KO' }];
-const NAV_STAGE_START = new Set<PageId>(['workload', 'cost', 'catalog']);
+const NAV_STAGE_START = new Set<PageId>(['architecture', 'cost', 'catalog']);
 
 // r4 stream D: the non-wide panel width and the wide / 3D choice are remembered per page (localStorage, try/catch)
 const PANEL_W_KEY = (p: PageId) => `aidc:panelW:${p}`;

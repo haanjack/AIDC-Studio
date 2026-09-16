@@ -64,13 +64,15 @@ engines/unreal        Unreal Engine 5 Python importer
 
 ## Core workflow
 
-1. **Define the site** — Enter climate, power cost, carbon factors, utility feeders, energisation dates, hall envelopes, floor loading, IT-power budgets, and expansion strategy.
-2. **Select standards and platforms** — Choose a standards profile, deployment-unit template, compatible compute platform, containment, CDU, room-cooling equipment, and network fabric.
+1. **Select standards and platforms** — Choose a standards profile, deployment-unit template, compatible compute platform, containment, CDU, room-cooling equipment, and network fabric.
+2. **Define the site** — Enter climate, power cost, carbon factors, utility feeders, energisation dates, hall envelopes, floor loading, IT-power budgets, and expansion strategy.
 3. **Generate and fit the layout** — Place compute and service rows, cooling equipment, electrical rooms, reservations, trays, busways, pipes, and network cores. Fit or right-size the hall in both directions.
-4. **Analyse infrastructure** — Review capacity, redundancy, power paths, cooling balance, CFD-lite results, cable reach, rail utilisation, IP allocation, validation findings, and one-click remedies.
-5. **Model workloads** — Estimate training or inference throughput, communication overhead, MFU, goodput, duration, GPU demand, and power profile. Calibrate with measured benchmark data when available.
+4. **Model workloads against the placed cluster** — The dominant placed accelerator supplies the physical HBM, usable-memory limit, scale-up domain, compute and bandwidth envelope. Estimate training or inference throughput, communication overhead, MFU, goodput, duration, replica demand and power profile. Inference first derives a memory-fit TP floor from weight and one-sequence KV residency, then uses request rate to size replica count. Replicas support TP/PP/EP/CP, including independent prefill and decode topologies for P/D disaggregation. Calibrate throughput and latency with measured benchmark data when available.
+5. **Analyse infrastructure** — Review capacity, redundancy, power paths, cooling balance, CFD-lite results, cable reach, rail utilisation, IP allocation, validation findings, and one-click remedies.
 6. **Plan delivery** — Evaluate BOM, CAPEX/OPEX/TCO, procurement lead times, installation waves, commissioning, and the critical path.
 7. **Issue deliverables** — Generate reports, drawings, rack plans, cable/IP schedules, NOS configurations, test packs, and model exports.
+
+The default UI is cluster-first: platform and deployment units → site → layout → workload simulation. A separate workload-to-GPU/DU resize what-if remains available for greenfield demand-first studies; it creates a proposal and does not silently replace the placed hardware basis.
 
 ## Key modelling concepts
 
@@ -92,7 +94,7 @@ The 3D viewer, interactive 2D views, drawing sheets, clash/wall audits, and expo
 
 ### Network and IP planning
 
-The network model supports scale-up and scale-out fabrics, rail-optimised and conventional topologies, per-port cable schedules, tray-aware length estimation, load-balancing efficiency, measured calibration, and workload-driven traffic. The IP planner produces IPv4 and IPv6 addressing, ASN allocation, subnet utilisation, device/NIC assignments, overlap checks, and printable/CSV outputs.
+The network model supports scale-up and scale-out fabrics, rail-optimised and conventional topologies, per-port cable schedules, tray-aware length estimation, load-balancing efficiency, measured calibration, and selectable training or inference traffic scenarios. Inference evaluation combines the GPU racks placed in the layout with prefill/decode TP/PP/EP/CP topology and P/D KV-cache transfer demand to expose tier bottlenecks. The IP planner produces IPv4 and IPv6 addressing, ASN allocation, subnet utilisation, device/NIC assignments, overlap checks, and printable/CSV outputs.
 
 ### Cooling and CFD-lite
 

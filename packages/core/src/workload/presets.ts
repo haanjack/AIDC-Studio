@@ -96,6 +96,78 @@ export const MODEL_PRESETS: ModelPreset[] = [
     }
   },
   {
+    "id": "deepseek-v4-pro",
+    "name": "DeepSeek-V4-Pro",
+    "org": "DeepSeek",
+    "kind": "moe",
+    "paramsB": 1600,
+    "activeParamsB": 49,
+    "layers": 61,
+    "hiddenSize": 7168,
+    "numHeads": 128,
+    "kvHeads": 1,
+    "vocab": 129280,
+    "moe": {
+      "experts": 384,
+      "topK": 6,
+      "shared": 1,
+      "expertFfn": 3072
+    },
+    "contextLen": 1048576,
+    "sourceUrl": "https://huggingface.co/deepseek-ai/DeepSeek-V4-Pro/raw/main/config.json",
+    "sourceType": "official-config",
+    "headDim": 512,
+    "attention": {
+      "pattern": "hybrid HCA/CSA compressed sparse attention; local window 128"
+    },
+    "license": "MIT",
+    "notes": "Card: 1.6T total / 49B activated and 1M context. Config: 61 layers, 384 routed experts, 6 selected + 1 shared, HCA/CSA with per-layer compression ratios. The current traffic model uses the published 1-KV-head cache interface as a conservative linear KV estimate; sparse-attention index/state overhead is not separately modeled.",
+    "cardUrl": "https://huggingface.co/deepseek-ai/DeepSeek-V4-Pro",
+    "derived": {
+      "paramsB": 1598.84,
+      "activeParamsB": 49,
+      "kvBytesPerTokenBf16": 124928,
+      "kvBytesPerTokenBf16LongContext": 124928,
+      "epA2aBytesPerTokenPerMoeLayerFwd": 129024
+    }
+  },
+  {
+    "id": "deepseek-v4-flash",
+    "name": "DeepSeek-V4-Flash",
+    "org": "DeepSeek",
+    "kind": "moe",
+    "paramsB": 284,
+    "activeParamsB": 13,
+    "layers": 43,
+    "hiddenSize": 4096,
+    "numHeads": 64,
+    "kvHeads": 1,
+    "vocab": 129280,
+    "moe": {
+      "experts": 256,
+      "topK": 6,
+      "shared": 1,
+      "expertFfn": 2048
+    },
+    "contextLen": 1048576,
+    "sourceUrl": "https://huggingface.co/deepseek-ai/DeepSeek-V4-Flash/raw/main/config.json",
+    "sourceType": "official-config",
+    "headDim": 512,
+    "attention": {
+      "pattern": "hybrid HCA/CSA compressed sparse attention; local window 128"
+    },
+    "license": "MIT",
+    "notes": "Card: 284B total / 13B activated and 1M context. Config: 43 layers, 256 routed experts, 6 selected + 1 shared, HCA/CSA with per-layer compression ratios. The current traffic model uses the published 1-KV-head cache interface as a conservative linear KV estimate; sparse-attention index/state overhead is not separately modeled.",
+    "cardUrl": "https://huggingface.co/deepseek-ai/DeepSeek-V4-Flash",
+    "derived": {
+      "paramsB": 284,
+      "activeParamsB": 13,
+      "kvBytesPerTokenBf16": 88064,
+      "kvBytesPerTokenBf16LongContext": 88064,
+      "epA2aBytesPerTokenPerMoeLayerFwd": 73728
+    }
+  },
+  {
     "id": "kimi-k2",
     "name": "Kimi K2",
     "org": "Moonshot AI",
@@ -134,6 +206,94 @@ export const MODEL_PRESETS: ModelPreset[] = [
       "kvBytesPerTokenBf16": 70272,
       "kvBytesPerTokenBf16LongContext": 70272,
       "epA2aBytesPerTokenPerMoeLayerFwd": 172032
+    }
+  },
+  {
+    "id": "kimi-k2.5",
+    "name": "Kimi K2.5",
+    "org": "Moonshot AI",
+    "kind": "moe",
+    "paramsB": 1000,
+    "activeParamsB": 32,
+    "layers": 61,
+    "hiddenSize": 7168,
+    "numHeads": 64,
+    "kvHeads": 64,
+    "vocab": 163840,
+    "moe": {
+      "experts": 384,
+      "topK": 8,
+      "shared": 1,
+      "denseLayers": 1,
+      "expertFfn": 2048,
+      "denseFfn": 18432
+    },
+    "mla": {
+      "dLatent": 512,
+      "dRope": 64,
+      "qLatent": 1536,
+      "dNope": 128,
+      "dV": 128
+    },
+    "contextLen": 262144,
+    "sourceUrl": "https://huggingface.co/moonshotai/Kimi-K2.5/raw/main/config.json",
+    "sourceType": "official-config",
+    "headDim": 128,
+    "license": "Modified MIT",
+    "notes": "Card: 1T total / 32B activated, 61 layers incl. 1 dense, 384 routed experts, 8 selected + 1 shared, and 256K context. Native multimodal checkpoint includes a 400M vision encoder; capacity fields model the published text architecture.",
+    "cardUrl": "https://huggingface.co/moonshotai/Kimi-K2.5",
+    "derived": {
+      "paramsB": 1026.88,
+      "activeParamsB": 32,
+      "kvBytesPerTokenBf16": 70272,
+      "kvBytesPerTokenBf16LongContext": 70272,
+      "epA2aBytesPerTokenPerMoeLayerFwd": 172032
+    }
+  },
+  {
+    "id": "kimi-k3",
+    "name": "Kimi K3",
+    "org": "Moonshot AI",
+    "kind": "moe",
+    "paramsB": 2800,
+    "activeParamsB": 104,
+    "layers": 93,
+    "hiddenSize": 7168,
+    "numHeads": 96,
+    "kvHeads": 96,
+    "vocab": 163840,
+    "moe": {
+      "experts": 896,
+      "topK": 16,
+      "shared": 2,
+      "denseLayers": 1,
+      "expertFfn": 3072,
+      "denseFfn": 33792
+    },
+    "mla": {
+      "dLatent": 512,
+      "dRope": 64,
+      "qLatent": 1536,
+      "dNope": 128,
+      "dV": 128
+    },
+    "contextLen": 1048576,
+    "sourceUrl": "https://huggingface.co/moonshotai/Kimi-K3/raw/main/config.json",
+    "sourceType": "official-config",
+    "headDim": 128,
+    "attention": {
+      "pattern": "69 KDA : 24 gated MLA"
+    },
+    "kvCacheLayerFraction": 0.25806451612903225,
+    "license": "Kimi K3 License",
+    "notes": "Card: 2.8T total / 104B activated, 93 layers, 896 routed experts, 16 selected + 2 shared, and 1M context. Only 24 of 93 layers have token-growing gated-MLA KV; the 69 KDA layers' fixed recurrent state is excluded from per-token KV and must be added by a deployment-specific runtime profile.",
+    "cardUrl": "https://huggingface.co/moonshotai/Kimi-K3",
+    "derived": {
+      "paramsB": 2779.93,
+      "activeParamsB": 104,
+      "kvBytesPerTokenBf16": 27648,
+      "kvBytesPerTokenBf16LongContext": 27648,
+      "epA2aBytesPerTokenPerMoeLayerFwd": 344064
     }
   },
   {
@@ -201,6 +361,80 @@ export const MODEL_PRESETS: ModelPreset[] = [
       "activeParamsB": 3.35,
       "kvBytesPerTokenBf16": 98304,
       "kvBytesPerTokenBf16LongContext": 98304,
+      "epA2aBytesPerTokenPerMoeLayerFwd": 49152
+    }
+  },
+  {
+    "id": "qwen3.5-122b-a10b",
+    "name": "Qwen3.5-122B-A10B",
+    "org": "Alibaba Qwen",
+    "kind": "moe",
+    "paramsB": 122,
+    "activeParamsB": 10,
+    "layers": 48,
+    "hiddenSize": 3072,
+    "numHeads": 32,
+    "kvHeads": 2,
+    "vocab": 248320,
+    "moe": {
+      "experts": 256,
+      "topK": 8,
+      "shared": 1,
+      "expertFfn": 1024
+    },
+    "contextLen": 262144,
+    "sourceUrl": "https://huggingface.co/Qwen/Qwen3.5-122B-A10B/raw/main/config.json",
+    "sourceType": "official-config",
+    "headDim": 256,
+    "attention": {
+      "pattern": "3 linear : 1 full"
+    },
+    "kvCacheLayerFraction": 0.25,
+    "license": "Apache-2.0",
+    "notes": "Card: 122B total / 10B activated and 262,144-token native context (extensible to 1,010,000). Config alternates three Gated Delta Network layers with one full-attention layer; per-token KV counts only the 12 full-attention layers. Linear-attention recurrent state is fixed-size and not included in the per-token value.",
+    "cardUrl": "https://huggingface.co/Qwen/Qwen3.5-122B-A10B",
+    "derived": {
+      "paramsB": 122,
+      "activeParamsB": 10,
+      "kvBytesPerTokenBf16": 24576,
+      "kvBytesPerTokenBf16LongContext": 24576,
+      "epA2aBytesPerTokenPerMoeLayerFwd": 73728
+    }
+  },
+  {
+    "id": "qwen3.5-35b-a3b",
+    "name": "Qwen3.5-35B-A3B",
+    "org": "Alibaba Qwen",
+    "kind": "moe",
+    "paramsB": 35,
+    "activeParamsB": 3,
+    "layers": 40,
+    "hiddenSize": 2048,
+    "numHeads": 16,
+    "kvHeads": 2,
+    "vocab": 248320,
+    "moe": {
+      "experts": 256,
+      "topK": 8,
+      "shared": 1,
+      "expertFfn": 512
+    },
+    "contextLen": 262144,
+    "sourceUrl": "https://huggingface.co/Qwen/Qwen3.5-35B-A3B/raw/main/config.json",
+    "sourceType": "official-config",
+    "headDim": 256,
+    "attention": {
+      "pattern": "3 linear : 1 full"
+    },
+    "kvCacheLayerFraction": 0.25,
+    "license": "Apache-2.0",
+    "notes": "Card: 35B total / 3B activated and 262,144-token native context (extensible to 1,010,000). Config alternates three Gated Delta Network layers with one full-attention layer; per-token KV counts only the 10 full-attention layers. Linear-attention recurrent state is fixed-size and not included in the per-token value.",
+    "cardUrl": "https://huggingface.co/Qwen/Qwen3.5-35B-A3B",
+    "derived": {
+      "paramsB": 35,
+      "activeParamsB": 3,
+      "kvBytesPerTokenBf16": 20480,
+      "kvBytesPerTokenBf16LongContext": 20480,
       "epA2aBytesPerTokenPerMoeLayerFwd": 49152
     }
   },
@@ -396,6 +630,89 @@ export const MODEL_PRESETS: ModelPreset[] = [
       "kvBytesPerTokenBf16": 376832,
       "kvBytesPerTokenBf16LongContext": 376832,
       "epA2aBytesPerTokenPerMoeLayerFwd": 122880
+    }
+  },
+  {
+    "id": "glm-5.2",
+    "name": "GLM-5.2",
+    "org": "Z.ai (Zhipu)",
+    "kind": "moe",
+    "paramsB": 753,
+    "activeParamsB": 40,
+    "layers": 78,
+    "hiddenSize": 6144,
+    "numHeads": 64,
+    "kvHeads": 64,
+    "vocab": 154880,
+    "moe": {
+      "experts": 256,
+      "topK": 8,
+      "shared": 1,
+      "denseLayers": 3,
+      "expertFfn": 2048,
+      "denseFfn": 12288
+    },
+    "mla": {
+      "dLatent": 512,
+      "dRope": 64,
+      "qLatent": 2048,
+      "dNope": 192,
+      "dV": 256
+    },
+    "contextLen": 1048576,
+    "sourceUrl": "https://huggingface.co/zai-org/GLM-5.2/raw/main/config.json",
+    "sourceType": "official-config",
+    "headDim": 192,
+    "attention": {
+      "pattern": "DeepSeek Sparse Attention with IndexShare"
+    },
+    "license": "MIT",
+    "notes": "Official checkpoint contains 753.33B parameters; deployment summaries round the active path to 40B. Config: 78 layers, 256 routed experts, 8 selected + 1 shared, 3 leading dense layers, DSA/IndexShare, and 1M context. Sparse-attention indexing overhead is not separately modeled.",
+    "cardUrl": "https://huggingface.co/zai-org/GLM-5.2",
+    "derived": {
+      "paramsB": 753.33,
+      "activeParamsB": 40,
+      "kvBytesPerTokenBf16": 89856,
+      "kvBytesPerTokenBf16LongContext": 89856,
+      "epA2aBytesPerTokenPerMoeLayerFwd": 147456
+    }
+  },
+  {
+    "id": "minimax-m3",
+    "name": "MiniMax-M3",
+    "org": "MiniMax AI",
+    "kind": "moe",
+    "paramsB": 428,
+    "activeParamsB": 23,
+    "layers": 60,
+    "hiddenSize": 6144,
+    "numHeads": 64,
+    "kvHeads": 4,
+    "vocab": 200064,
+    "moe": {
+      "experts": 128,
+      "topK": 4,
+      "shared": 1,
+      "denseLayers": 3,
+      "expertFfn": 3072,
+      "denseFfn": 12288
+    },
+    "contextLen": 1048576,
+    "sourceUrl": "https://huggingface.co/MiniMaxAI/MiniMax-M3/raw/main/config.json",
+    "sourceType": "official-config",
+    "headDim": 128,
+    "attention": {
+      "pattern": "3 dense/full + 57 Mixture of Sparse Attention layers"
+    },
+    "license": "MiniMax Community License",
+    "notes": "Card: approximately 428B total / 23B activated with 1M context. Text config: 60 layers, 128 routed experts, 4 selected + 1 shared, 3 leading dense layers, GQA-4 and Mixture of Sparse Attention. Sparse lookup changes attention compute but not the conservative GQA KV-capacity estimate used here.",
+    "cardUrl": "https://huggingface.co/MiniMaxAI/MiniMax-M3",
+    "derived": {
+      "paramsB": 427.04,
+      "activeParamsB": 23,
+      "kvBytesPerTokenBf16": 122880,
+      "kvBytesPerTokenBf16LongContext": 122880,
+      "epA2aBytesPerTokenPerMoeLayerFwd": 73728
     }
   },
   {
@@ -1071,6 +1388,7 @@ export function presetModelFields(p: ModelPreset): Omit<WorkloadBlueprint['model
     vocab: p.vocab,
   };
   if (p.headDim) m.headDim = p.headDim;
+  if (p.kvCacheLayerFraction) m.kvCacheLayerFraction = p.kvCacheLayerFraction;
   const window = p.attention?.slidingWindow ?? p.attention?.chunkSize;
   if (window) m.attentionWindow = window;
   const gli = presetGlobalLayerInterval(p);
@@ -1081,7 +1399,7 @@ export function presetModelFields(p: ModelPreset): Omit<WorkloadBlueprint['model
     if (p.moe.denseLayers) m.moe.denseLayers = p.moe.denseLayers;
     if (p.moe.moeLayerInterval) m.moe.moeLayerInterval = p.moe.moeLayerInterval;
     // node-limited routing is a DeepSeek-V3/R1 training property (tech report: M = 4); other presets publish none
-    if (p.id.startsWith('deepseek-')) m.moe.nodeLimit = 4;
+    if (p.id === 'deepseek-v3' || p.id === 'deepseek-r1') m.moe.nodeLimit = 4;
   }
   if (p.mla) m.mla = { dLatent: p.mla.dLatent, dRope: p.mla.dRope };
   return m;
@@ -1092,7 +1410,7 @@ export function applyModelPreset(model: WorkloadBlueprint['model'], p: ModelPres
   return { ...presetModelFields(p), seqLen: Math.min(model.seqLen, p.contextLen) };
 }
 
-const PRESET_KEYS = ['paramsB', 'activeParamsB', 'layers', 'hiddenSize', 'numHeads', 'kvHeads', 'vocab', 'headDim', 'attentionWindow', 'globalLayerInterval'] as const;
+const PRESET_KEYS = ['paramsB', 'activeParamsB', 'layers', 'hiddenSize', 'numHeads', 'kvHeads', 'vocab', 'headDim', 'attentionWindow', 'globalLayerInterval', 'kvCacheLayerFraction'] as const;
 
 /** Architecture fields where the blueprint differs from its preset ([] = unmodified; undefined preset → []). */
 export function presetModifiedFields(w: Pick<WorkloadBlueprint, 'model' | 'presetId'>): string[] {

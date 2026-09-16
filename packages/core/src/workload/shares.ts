@@ -11,6 +11,7 @@
 //                    the unclamped donors; if every donor sits at its minimum, s_k is capped (warning).
 // All arithmetic is deterministic; functions return new blueprint objects and never mutate their input.
 import type { Issue, WorkloadBlueprint } from '../model/types.ts';
+import { inferenceDeploymentGpus } from './inference.ts';
 
 const EPS = 1e-9;
 
@@ -18,10 +19,11 @@ export function gpuShareTotal(ws: WorkloadBlueprint[]): number {
   return ws.reduce((s, w) => s + (Number.isFinite(w.gpuShare) ? w.gpuShare : 0), 0);
 }
 
-/** GPUs of one model-parallel group: training TP·CP·PP, otherwise 1 GPU (inference instance size is found by the simulator). */
+/** GPUs of one schedulable group: training TP·CP·PP, inference replica (or one prefill + one decode replica), otherwise 1. */
 export function modelParallelGroupGpus(w: WorkloadBlueprint): number {
+  if (w.kind === 'llm-inference') return inferenceDeploymentGpus(w);
   const t = w.training;
-  if (!t || w.kind === 'llm-inference' || w.kind === 'hpc-simulation') return 1;
+  if (!t || w.kind === 'hpc-simulation') return 1;
   return Math.max(1, Math.round(t.tp)) * Math.max(1, Math.round(t.cp ?? 1)) * Math.max(1, Math.round(t.pp));
 }
 

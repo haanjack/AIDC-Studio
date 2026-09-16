@@ -190,7 +190,7 @@ export const EN = {
       '- **Power**: IT design = rack nameplate × diversity + network. UPS efficiency 97 %, transformer losses 1.5 %, distribution losses 1 %, electrical-room cooling = (UPS + transformer losses) × 30 %. Firm N−1 utility = total − largest substation group.',
       '- **Cooling**: rack heat split into CDU / air by liquidFraction. Flow interpolated from the liquid-flow / airflow vs temperature curves of each catalog item (liquidFlowCurve / airflowCurve). Chiller COP 3.3 (design) / 5.0 (annual); 1/25 of the load as power during economizer hours.',
       '- **Network**: leaf downlinks d = ⌊k·o/(o+1)⌋; rail-optimised leaves per pod in multiples of the rail count; 2 tiers when L ≤ k. Cable length = Manhattan distance × route factor + tray rise/fall + slack per end.',
-      '- **Workload**: training FLOPs = 6·N·D; step time = compute (incl. PP bubble) + TP/PP/DP/EP communication. Goodput = 1 − δ/τ − (τ/2 + δ + R)/MTBF. Inference decode is memory-bandwidth bound, prefill compute bound.',
+      '- **Workload**: training FLOPs = 6·N·D; step time = compute (incl. PP bubble) + TP/PP/DP/EP communication. Goodput = 1 − δ/τ − (τ/2 + δ + R)/MTBF. Inference decode is memory-bandwidth bound and prefill compute bound; TP/PP/EP/CP set replica shape, while P/D disaggregation sizes the two pools separately and adds KV transfer.',
       '- **Cost**: catalog prices (incl. estimates) × quantities + synthetic items (batteries, piping, facility) + labour + contingency. OPEX = energy at 85 % average IT load + 2 % of CAPEX.',
       '- **Schedule**: long-lead items (≥ 26 weeks) ordered at project start; durations from work quantity / crew capacity, crews shared between waves, critical path by CPM.',
     ],

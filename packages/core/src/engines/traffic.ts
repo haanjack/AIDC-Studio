@@ -1,9 +1,10 @@
 import { resolveCatalog, withCatalog } from '../catalog/registry.ts';
-import type { EvidenceSourceType, LoadBalancing, Project, SpecSource, TrafficReport, WorkloadBlueprint } from '../model/types.ts';
+import type { ComputeSpec, EvidenceSourceType, LoadBalancing, NetworkTrafficTimePoint, Project, SpecSource, TrafficPhysicalEnvelope, TrafficReport, WorkloadBlueprint } from '../model/types.ts';
 import { buildContext, clamp, type Ctx } from './context.ts';
 import { ETA_HOST_SOURCE } from './eta.ts';
 import { analyzeNetworkCtx, etaFor, type NetworkResult } from './network.ts';
 import { l2l3Verdict } from './radix.ts';
+import { inferenceParallelismFor, inferenceReplicaGpus } from '../workload/inference.ts';
 
 /**
  * Deterministic workload → network traffic engine (stream S2, PROPOSAL-v2 §3.3, docs/research/network-sim.md §2–§3 + review C1/C2/C6/C7;
@@ -63,6 +64,13 @@ export interface TrafficGpu {
   /** achieved bus bandwidth fractions (NVLink 0.8 Calculon; NIC = η_host, default 0.95 sourced in engines/eta.ts) */
   scaleUpBusbw?: number;
   nicBusbw?: number;
+  /** Optional catalog identity/provenance for the physical envelope shown with the result. */
+  platformId?: string;
+  platformName?: string;
+  acceleratorName?: string;
+  scaleUpKind?: ComputeSpec['scaleUp']['kind'];
+  scaleUpName?: string;
+  scaleOutFabric?: Project['network']['scaleOut']['fabric'];
 }
 
 export interface TrafficFabric {
@@ -104,8 +112,25 @@ export interface TrafficSpec {
   overlapFramework?: OverlapFramework;
 }
 
+/** Steady-state serving demand evaluated against the physical rack/NIC envelope. */
+export interface InferenceTrafficSpec {
+  model: WorkloadBlueprint['model'] & { headDim?: number };
+  inference: NonNullable<WorkloadBlueprint['inference']>;
+  /** GPUs allocated from the layout's placed GPU racks. */
+  gpus: number;
+  gpu: TrafficGpu;
+  fabric: TrafficFabric;
+}
+
 export type Group = 'tp' | 'cp' | 'pp' | 'dp' | 'ep';
 type Tier = 'scale-up' | 'leaf' | 'spine' | 'core';
+
+/** Stored in NetworkDesign.trafficWorkloadId when every eligible workload is evaluated concurrently. */
+export const AGGREGATE_TRAFFIC_ID = '__all-concurrent-workloads__';
+// Match workload power traces so bandwidth and power can be inspected over the same ten-minute window.
+const TRAFFIC_TRACE_SECONDS = 600;
+const TRACE_SUBSAMPLES = 10;
+const TIERS: readonly Tier[] = ['scale-up', 'leaf', 'spine', 'core'];
 
 /** Precision → bytes and default MFU (compute-path MFU incl. pipeline bubble; Llama 3 Tab. 4 for BF16, estimates for FP8/FP4). */
 const PRECISION_BYTES: Record<string, number> = { bf16: 2, fp8: 1, fp4: 0.5 };
@@ -174,6 +199,32 @@ const B_G = 2; // BF16 gradient reduce-scatter
 const MAX_OVERSUB = 8;
 
 const GB = 1e9;
+
+const SCALE_UP_NAMES: Record<ComputeSpec['scaleUp']['kind'], string> = {
+  nvlink: 'NVLink',
+  ualink: 'UALink',
+  'esun-ethernet': 'ESUN Ethernet',
+  'vendor-proprietary': 'Vendor-proprietary scale-up',
+  pcie: 'PCIe',
+  none: 'No native scale-up',
+};
+
+function physicalEnvelope(gpu: TrafficGpu, suCap: number, nicCap: number): TrafficPhysicalEnvelope {
+  const scaleUpKind = gpu.scaleUpKind ?? 'none';
+  return {
+    ...(gpu.platformId ? { platformId: gpu.platformId } : {}),
+    ...(gpu.platformName ? { platformName: gpu.platformName } : {}),
+    ...(gpu.acceleratorName ? { acceleratorName: gpu.acceleratorName } : {}),
+    scaleUpKind,
+    scaleUpName: gpu.scaleUpName ?? SCALE_UP_NAMES[scaleUpKind],
+    scaleUpDomain: Math.max(1, gpu.scaleUpDomain),
+    scaleUpRawBidirectionalGBpsPerGpu: gpu.scaleUpGBpsPerDir * 2,
+    scaleUpEffectiveGBpsPerGpu: suCap / GB,
+    scaleUpBusbwFactor: gpu.scaleUpBusbw ?? SCALE_UP_BUSBW,
+    scaleOutEffectiveGBpsPerGpu: nicCap / GB,
+    ...(gpu.scaleOutFabric ? { scaleOutFabric: gpu.scaleOutFabric } : {}),
+  };
+}
 
 interface GroupBytes {
   total: number;
@@ -452,20 +503,36 @@ export function computeTraffic(spec: TrafficSpec): TrafficReport {
     const iKv = Math.max(1, Math.round(im.kvHeads ?? iHeads));
     const iHeadDim = im.headDim && im.headDim > 0 ? im.headDim : iH / iHeads;
     const mla = im.mla;
+    const iKvLayerFraction = clamp(im.kvCacheLayerFraction ?? 1, 0, 1);
     // KV bytes/token: GQA/MHA 2·L·n_kv·d_head·B_kv; MLA L·(d_c + d_rope)·B_kv (DeepSeek-V2 §2.1; anchors: V3 70.3 KB, Llama 3.1 405B 516 KB at 2 B)
     // sliding-window layers cap the prompt's KV at the window (averaged per prompt token; MLA models have no window)
     const iKvSeq = kvSeqEffective(Math.max(1, inf.inputTokens), im.attentionWindow, im.globalLayerInterval);
-    const kvBytesPerToken = mla ? iL * (mla.dLatent + mla.dRope) * bKv : (2 * iL * iKv * iHeadDim * bKv * iKvSeq) / Math.max(1, inf.inputTokens);
+    const kvBytesPerToken = mla ? iL * iKvLayerFraction * (mla.dLatent + mla.dRope) * bKv : (2 * iL * iKvLayerFraction * iKv * iHeadDim * bKv * iKvSeq) / Math.max(1, inf.inputTokens);
     // DistServe §3.3: R_KV = rps × prompt tokens × KV bytes/token
     const kvTransferGbps = (inf.requestsPerSec * inf.inputTokens * kvBytesPerToken * 8) / GB;
     // DeepSeek insights §2.3.2: (1 B + 2 B) × 32 tokens × k experts × h per layer, dispatch + combine, over the interconnect
     const iMoe = im.moe;
     const iTop = iMoe ? Math.max(1, iMoe.topK) : 0;
-    const iEpInDomain = !iMoe || iMoe.experts <= U * 4; // ≈ 4 experts per GPU fit the scale-up domain (NVL72 holds 256 routed experts)
+    const iPrefill = inferenceParallelismFor(inf, 'prefill');
+    const iDecode = inferenceParallelismFor(inf, 'decode');
+    const iPrefillGpus = inferenceReplicaGpus(iPrefill);
+    const iDecodeGpus = inferenceReplicaGpus(iDecode);
+    const iEpInDomain = iDecode.tp * iDecode.ep <= U;
     const a2aBw = iEpInDomain ? suCap : nicCap;
-    const epDecodeTokPerSPerUser = iMoe ? a2aBw / (Math.max(1, moeLayerCount(iL, iMoe)) * 2 * iTop * iH * 3) : Number.POSITIVE_INFINITY;
-    inference = { kvBytesPerToken, kvTransferGbps, epDecodeTokPerSPerUser, attention: mla ? 'mla' : 'gqa' };
-    notes.push(`Inference (${im.name}): KV ${(kvBytesPerToken / 1024).toFixed(1)} KB/token (${mla ? 'MLA' : `GQA, d_head ${iHeadDim}${im.attentionWindow ? `, window ${im.attentionWindow} with 1 global layer in ${im.globalLayerInterval ?? '∞'}` : ''}`}, ${inf.kvPrecision ?? 'fp8'}); P/D KV transfer ${kvTransferGbps.toFixed(1)} Gb/s aggregate at ${inf.requestsPerSec} req/s × ${inf.inputTokens} prompt tokens${iMoe ? `; EP all-to-all decode ceiling ≈ ${epDecodeTokPerSPerUser.toFixed(0)} tok/s/user on ${iEpInDomain ? 'the scale-up domain' : 'the NIC'} (DeepSeek: 67 tok/s on 400G IB vs ≈1,200 on NVL72)` : ''}.`);
+    const epDecodeTokPerSPerUser = iMoe && iDecode.ep > 1 ? a2aBw / (Math.max(1, moeLayerCount(iL, iMoe)) * 2 * iTop * iH * 3 * ((iDecode.ep - 1) / iDecode.ep)) : Number.POSITIVE_INFINITY;
+    const pdGbps = inf.disaggregated ? kvTransferGbps : 0;
+    inference = {
+      kvBytesPerToken,
+      kvTransferGbps: pdGbps,
+      epDecodeTokPerSPerUser,
+      attention: mla ? 'mla' : 'gqa',
+      disaggregated: inf.disaggregated,
+      prefillParallelism: iPrefill,
+      decodeParallelism: iDecode,
+      prefillInstanceGpus: iPrefillGpus,
+      decodeInstanceGpus: iDecodeGpus,
+    };
+    notes.push(`Inference (${im.name}): prefill TP${iPrefill.tp}·PP${iPrefill.pp}·EP${iPrefill.ep}·CP${iPrefill.cp} (${iPrefillGpus} GPUs), decode TP${iDecode.tp}·PP${iDecode.pp}·EP${iDecode.ep}·CP${iDecode.cp} (${iDecodeGpus} GPUs); KV ${(kvBytesPerToken / 1024).toFixed(1)} KB/token (${mla ? 'MLA' : `GQA, d_head ${iHeadDim}${im.attentionWindow ? `, window ${im.attentionWindow} with 1 global layer in ${im.globalLayerInterval ?? '∞'}` : ''}`}, ${inf.kvPrecision ?? 'fp8'}); ${inf.disaggregated ? `P/D KV transfer ${pdGbps.toFixed(1)} Gb/s aggregate at ${inf.requestsPerSec} req/s × ${inf.inputTokens} prompt tokens` : 'aggregated serving has no P/D KV transfer'}${iMoe && iDecode.ep > 1 ? `; EP${iDecode.ep} all-to-all decode ceiling ≈ ${epDecodeTokPerSPerUser.toFixed(0)} tok/s/user on ${iEpInDomain ? 'the scale-up domain' : 'the NIC'}` : ''}.`);
   }
 
   // ── notes ──
@@ -485,6 +552,8 @@ export function computeTraffic(spec: TrafficSpec): TrafficReport {
   ) as NonNullable<TrafficReport['overlap']>;
 
   return {
+    mode: 'training',
+    basis: 'training-step',
     perTier,
     bytesPerStepByGroup: { tp: groups.tp.total / GB, pp: groups.pp.total / GB, dp: groups.dp.total / GB, ep: groups.ep.total / GB, cp: groups.cp.total / GB },
     minOversubscription: minOs,
@@ -499,6 +568,7 @@ export function computeTraffic(spec: TrafficSpec): TrafficReport {
     nicCommTimeS: nicCommTime,
     mfuEffective: mfuEff,
     groupTier: { tp: groups.tp.tier, cp: groups.cp.tier, pp: groups.pp.tier, dp: groups.dp.tier, ep: groups.ep.tier },
+    physical: physicalEnvelope(gpu, suCap, nicCap),
     inference,
     overlap,
     overlapFramework: mode,
@@ -534,19 +604,56 @@ export function peakFlopsFor(c: { gpuFlopsPeak: number; peakTflops?: Partial<Rec
 /** Build the traffic spec from the project / network result for a training blueprint (undefined when it cannot run). */
 export function buildTrafficSpec(input: TrafficInput): { spec: TrafficSpec; notes: string[] } | undefined {
   const { project, workload: w, ctx, network } = input;
-  const c = ctx.gpuRack?.compute;
   const t = w.training;
-  if (!c || !t || ctx.gpus <= 0) return undefined;
+  if (!t) return undefined;
+  const tpp = Math.max(1, t.tp * Math.max(1, t.cp ?? 1) * t.pp);
+  const built = buildTrafficEnvelope(input, tpp, t.precision, 'Training job');
+  if (!built) return undefined;
+  const { gpu, fabric, gpus, notes } = built;
+  const inference = project.workloads.find((x) => x.kind === 'llm-inference');
+  const ov = t.overlap as (NonNullable<typeof t.overlap> & { ep?: number; cp?: number; framework?: OverlapFramework }) | undefined;
+  const overlap: Partial<Record<Group, number>> = {};
+  for (const g of ['tp', 'cp', 'pp', 'dp', 'ep'] as Group[]) {
+    const v = ov?.[g];
+    if (typeof v === 'number' && Number.isFinite(v)) overlap[g] = v;
+  }
+  const spec: TrafficSpec = {
+    model: w.model,
+    training: t,
+    inference: inference?.inference ? { params: inference.inference, model: inference.model } : undefined,
+    gpus,
+    gpu,
+    fabric,
+    ...(Object.keys(overlap).length ? { overlap } : {}),
+    ...(ov?.framework ? { overlapFramework: ov.framework } : {}),
+  };
+  return { spec, notes };
+}
+
+interface TrafficEnvelope {
+  gpus: number;
+  gpu: TrafficGpu;
+  fabric: TrafficFabric;
+  plan: NetworkResult['plans'][number];
+  notes: string[];
+}
+
+/** Build the physical traffic envelope from GPU racks that are actually placed in the layout and the calculated scale-out plan. */
+function buildTrafficEnvelope(input: TrafficInput, allocationMultiple: number, precision: string, jobLabel: string): TrafficEnvelope | undefined {
+  const { project, workload: w, ctx, network } = input;
+  const gpuRack = ctx.gpuRack;
+  const c = gpuRack?.compute;
+  if (!c || ctx.gpus <= 0) return undefined;
   const plan = network.plans.find((p) => p.key === 'scale-out');
   if (!plan || plan.links <= 0) return undefined;
   const so = project.network.scaleOut;
-  const tpp = Math.max(1, t.tp * Math.max(1, t.cp ?? 1) * t.pp);
   // a job never spans clusters: the GPU share is taken from the cluster that carries the primary scale-out plan
   const clusterGpus = plan.clusterGpus ?? ctx.gpus;
-  const gpus = Math.floor((clamp(w.gpuShare, 0, 1) * clusterGpus) / tpp) * tpp;
-  if (gpus < tpp) return undefined;
+  const unit = Math.max(1, Math.round(allocationMultiple));
+  const gpus = Math.floor((clamp(w.gpuShare, 0, 1) * clusterGpus) / unit) * unit;
+  if (gpus < unit) return undefined;
   const notes: string[] = [];
-  if (plan.clusterGpus !== undefined && plan.clusterGpus < ctx.gpus) notes.push(`Training job sized inside cluster '${plan.clusterName ?? plan.clusterId}' (${plan.clusterGpus} of ${ctx.gpus} GPUs) — collectives never cross clusters.`);
+  if (plan.clusterGpus !== undefined && plan.clusterGpus < ctx.gpus) notes.push(`${jobLabel} sized inside cluster '${plan.clusterName ?? plan.clusterId}' (${plan.clusterGpus} of ${ctx.gpus} GPUs) — ${jobLabel === 'Training job' ? 'collectives' : 'traffic'} never cross clusters.`);
   const portsPerGpu = Math.max(1, c.scaleOutPortsPerGpu);
   const lanes = Math.max(1, Math.round(c.scaleOutPortGbps / (plan.sw.switch?.portGbps ?? c.scaleOutPortGbps)));
   // GPUs per leaf domain = average GPUs of the pods that carry scale-out endpoints
@@ -564,24 +671,22 @@ export function buildTrafficSpec(input: TrafficInput): { spec: TrafficSpec; note
   const eta = etaFor(so);
   const nicGbps = c.scaleOutPortGbps * portsPerGpu;
   const speedFactor = nicGbps > 0 ? Math.min(1, (plan.linkGbps * lanes) / c.scaleOutPortGbps) : 1;
-  const inference = project.workloads.find((x) => x.kind === 'llm-inference');
-  const ov = t.overlap as (NonNullable<typeof t.overlap> & { ep?: number; cp?: number; framework?: OverlapFramework }) | undefined;
-  const overlap: Partial<Record<Group, number>> = {};
-  for (const g of ['tp', 'cp', 'pp', 'dp', 'ep'] as Group[]) {
-    const v = ov?.[g];
-    if (typeof v === 'number' && Number.isFinite(v)) overlap[g] = v;
-  }
-  const spec: TrafficSpec = {
-    model: w.model,
-    training: t,
-    inference: inference?.inference ? { params: inference.inference, model: inference.model } : undefined,
+  return {
     gpus,
+    plan,
+    notes,
     gpu: {
-      peakFlops: peakFlopsFor(c, t.precision),
+      peakFlops: peakFlopsFor(c, precision),
       scaleUpDomain: c.scaleUp.domainSize,
       scaleUpGBpsPerDir: c.scaleUp.gbpsPerGpu / 8 / 2,
       nicGbps,
       nicBusbw: eta.host,
+      platformId: gpuRack.id,
+      platformName: gpuRack.name,
+      acceleratorName: c.gpuModel,
+      scaleUpKind: c.scaleUp.kind,
+      scaleUpName: c.scaleUp.family ?? SCALE_UP_NAMES[c.scaleUp.kind],
+      scaleOutFabric: so.fabric,
     },
     fabric: {
       kind: plan.kind,
@@ -596,14 +701,312 @@ export function buildTrafficSpec(input: TrafficInput): { spec: TrafficSpec; note
       sharp: isIb,
       speedFactor,
     },
-    ...(Object.keys(overlap).length ? { overlap } : {}),
-    ...(ov?.framework ? { overlapFramework: ov.framework } : {}),
   };
-  return { spec, notes };
+}
+
+type ServingGroup = Group | 'pd';
+
+/**
+ * Inference traffic is a steady-state rate model, not a synthetic training step. Values stored in the legacy
+ * `bytesPerStep*` fields are GB/s when `basis === 'inference-second'`.
+ */
+export function computeInferenceTraffic(spec: InferenceTrafficSpec): TrafficReport {
+  const { model, inference: inf, gpu, fabric } = spec;
+  const notes: string[] = [];
+  const U = Math.max(1, gpu.scaleUpDomain);
+  const gLeaf = Math.max(U, fabric.gpusPerLeafDomain);
+  const gSpine = Math.max(gLeaf, fabric.gpusPerSpineDomain);
+  const hasSpine = fabric.tiers >= 2;
+  const hasCore = fabric.tiers >= 3 && fabric.kind !== 'ddc';
+  const os = fabric.kind === 'ddc' ? 1 : Math.max(1, fabric.oversubscription);
+  const eta = fabric.eta.value;
+  const etaA2a = fabric.etaA2a && fabric.etaA2a > 0 ? fabric.etaA2a : eta;
+  const nicBusbw = gpu.nicBusbw ?? NIC_BUSBW;
+  const suCap = gpu.scaleUpGBpsPerDir * GB * (gpu.scaleUpBusbw ?? SCALE_UP_BUSBW);
+  const nicCap = (gpu.nicGbps / 8) * GB * nicBusbw;
+  const prefill = inferenceParallelismFor(inf, 'prefill');
+  const decode = inferenceParallelismFor(inf, 'decode');
+  const prefillGpus = inferenceReplicaGpus(prefill);
+  const decodeGpus = inferenceReplicaGpus(decode);
+  const deploymentGpus = inf.disaggregated ? prefillGpus + decodeGpus : prefillGpus;
+  const allocatedGpus = Math.max(deploymentGpus, Math.floor(spec.gpus / deploymentGpus) * deploymentGpus);
+  const replicas = Math.max(1, Math.floor(allocatedGpus / deploymentGpus));
+  const L = Math.max(1, model.layers);
+  const h = Math.max(1, model.hiddenSize);
+  const nHeads = Math.max(1, Math.round(model.numHeads ?? h / 128));
+  const nKv = Math.max(1, Math.round(model.kvHeads ?? nHeads));
+  const dHead = model.headDim && model.headDim > 0 ? model.headDim : h / nHeads;
+  const kvB = PRECISION_BYTES[inf.kvPrecision ?? 'fp8'] ?? 1;
+  const moe = model.moe;
+  const kTop = moe ? Math.max(1, moe.topK) : 0;
+  const tierBytes: Record<Tier, number> = { 'scale-up': 0, leaf: 0, spine: 0, core: 0 };
+  const tierUtil: Record<Tier, number> = { 'scale-up': 0, leaf: 0, spine: 0, core: 0 };
+  const groupBytes: Record<ServingGroup, number> = { tp: 0, cp: 0, pp: 0, dp: 0, ep: 0, pd: 0 };
+  const groupByTier = Object.fromEntries((['tp', 'cp', 'pp', 'ep', 'pd'] as ServingGroup[]).map((g) => [g, { 'scale-up': 0, leaf: 0, spine: 0, core: 0 }])) as Record<ServingGroup, Record<Tier, number>>;
+  const groupRoute: Record<ServingGroup, string> = { tp: '-', cp: '-', pp: '-', dp: '-', ep: '-', pd: '-' };
+  const spanFrac = (groupGpus: number, domain: number, hops: number) => (hops <= 0 ? 0 : clamp((Math.ceil(groupGpus / domain) - 1) / hops, 0, 1));
+  const routeOf = (bt: Record<Tier, number>) => bt.core > 0 ? 'leaf+spine+core' : bt.spine > 0 ? 'leaf+spine' : bt.leaf > 0 ? 'leaf' : bt['scale-up'] > 0 ? 'scale-up' : '-';
+  const routeRank = (route: string) => route === 'leaf+spine+core' ? 4 : route === 'leaf+spine' ? 3 : route === 'leaf' ? 2 : route === 'scale-up' ? 1 : 0;
+  const add = (group: ServingGroup, bytesPerSecond: number, bt: Record<Tier, number>) => {
+    if (!(bytesPerSecond > 0)) return;
+    groupBytes[group] += bytesPerSecond;
+    for (const tier of ['scale-up', 'leaf', 'spine', 'core'] as Tier[]) groupByTier[group][tier] += bt[tier];
+    const route = routeOf(bt);
+    if (routeRank(route) > routeRank(groupRoute[group])) groupRoute[group] = route;
+  };
+  const routeCollective = (group: Exclude<ServingGroup, 'dp' | 'pd'>, bytesPerSecond: number, p: ReturnType<typeof inferenceParallelismFor>) => {
+    if (!(bytesPerSecond > 0)) return;
+    const bt: Record<Tier, number> = { 'scale-up': 0, leaf: 0, spine: 0, core: 0 };
+    const groupGpus = group === 'tp' ? p.tp : group === 'cp' ? p.tp * p.cp : group === 'pp' ? p.tp * p.cp * p.pp : p.tp * p.ep;
+    if (groupGpus <= U) bt['scale-up'] = bytesPerSecond;
+    else if (group === 'ep') {
+      const domains = Math.ceil(groupGpus / U);
+      const cross = clamp((domains - 1) / domains, 0, 1);
+      bt['scale-up'] = bytesPerSecond * (1 - cross);
+      bt.leaf = bytesPerSecond * cross;
+      bt.spine = hasSpine ? bt.leaf * spanFrac(groupGpus, gLeaf, Math.max(1, domains - 1)) : 0;
+      bt.core = hasCore ? bt.leaf * spanFrac(groupGpus, gSpine, Math.max(1, domains - 1)) : 0;
+    } else {
+      bt.leaf = bytesPerSecond;
+      bt.spine = hasSpine ? bytesPerSecond * spanFrac(groupGpus, gLeaf, Math.max(1, groupGpus - 1)) : 0;
+      bt.core = hasCore ? bytesPerSecond * spanFrac(groupGpus, gSpine, Math.max(1, groupGpus - 1)) : 0;
+    }
+    add(group, bytesPerSecond, bt);
+  };
+  const addStage = (name: 'prefill' | 'decode', p: ReturnType<typeof inferenceParallelismFor>, tokensPerSecond: number) => {
+    const rate = tokensPerSecond / replicas;
+    const lStage = L / p.pp;
+    const tpBps = p.tp > 1 ? rate * lStage * 4 * h * B_ACT * ((p.tp - 1) / p.tp) : 0;
+    const cpBps = p.cp > 1 ? rate * lStage * 2 * nKv * dHead * kvB * ((p.cp - 1) / p.cp) : 0;
+    const ppBps = p.pp > 1 ? rate * h * B_ACT / p.tp * ((p.pp - 1) / p.pp) : 0;
+    const epBps = moe && p.ep > 1 ? rate * (moeLayerCount(L, moe) / p.pp) * kTop * h * 3 * ((p.ep - 1) / p.ep) : 0;
+    routeCollective('tp', tpBps, p);
+    routeCollective('cp', cpBps, p);
+    routeCollective('pp', ppBps, p);
+    routeCollective('ep', epBps, p);
+    if (p.tp > U) notes.push(`${name} TP${p.tp} exceeds the scale-up domain (${U}); its latency-sensitive all-reduce reaches the scale-out fabric.`);
+  };
+
+  const prefillTokensPerSec = inf.requestsPerSec * inf.inputTokens;
+  const decodeTokensPerSec = inf.requestsPerSec * inf.outputTokens;
+  addStage('prefill', prefill, prefillTokensPerSec);
+  addStage('decode', decode, decodeTokensPerSec);
+
+  const kvSeq = kvSeqEffective(Math.max(1, inf.inputTokens), model.attentionWindow, model.globalLayerInterval);
+  const kvLayerFraction = clamp(model.kvCacheLayerFraction ?? 1, 0, 1);
+  const kvBytesPerToken = model.mla
+    ? L * kvLayerFraction * (model.mla.dLatent + model.mla.dRope) * kvB
+    : (2 * L * kvLayerFraction * nKv * dHead * kvB * kvSeq) / Math.max(1, inf.inputTokens);
+  const kvTransferBps = inf.disaggregated ? inf.requestsPerSec * inf.inputTokens * kvBytesPerToken : 0;
+  if (kvTransferBps > 0) {
+    const prefillPoolGpus = replicas * prefillGpus;
+    const decodePoolGpus = replicas * decodeGpus;
+    const perEndpointBps = kvTransferBps / Math.max(1, Math.min(prefillPoolGpus, decodePoolGpus));
+    const bt: Record<Tier, number> = { 'scale-up': 0, leaf: perEndpointBps, spine: 0, core: 0 };
+    const endpointSpan = Math.max(prefillPoolGpus, decodePoolGpus);
+    bt.spine = hasSpine ? perEndpointBps * clamp(1 - gLeaf / Math.max(gLeaf, endpointSpan), 0, 1) : 0;
+    bt.core = hasCore ? perEndpointBps * clamp(1 - gSpine / Math.max(gSpine, endpointSpan), 0, 1) : 0;
+    add('pd', perEndpointBps, bt);
+  }
+
+  for (const group of ['tp', 'cp', 'pp', 'ep', 'pd'] as ServingGroup[]) {
+    const etaG = group === 'ep' ? etaA2a : eta;
+    for (const tier of ['scale-up', 'leaf', 'spine', 'core'] as Tier[]) {
+      const bytes = groupByTier[group][tier];
+      tierBytes[tier] += bytes;
+      const cap = tier === 'scale-up' ? suCap : nicCap;
+      const factor = tier === 'spine' || tier === 'core' ? os / etaG : 1;
+      tierUtil[tier] += bytes * factor / cap;
+    }
+  }
+  const tiers: Tier[] = ['scale-up', 'leaf', ...(hasSpine ? (['spine'] as Tier[]) : []), ...(hasCore ? (['core'] as Tier[]) : [])];
+  const perTier: TrafficReport['perTier'] = tiers.map((tier) => ({
+    tier,
+    bytesPerStepGB: tierBytes[tier] / GB,
+    utilization: tierUtil[tier],
+    utilizationAvg: tierUtil[tier],
+    headroom: tierUtil[tier] > 0 ? 1 / tierUtil[tier] - 1 : Number.POSITIVE_INFINITY,
+    capacityGBps: (tier === 'scale-up' ? suCap : nicCap) / GB,
+  }));
+  let minOs = MAX_OVERSUB;
+  for (const tier of ['spine', 'core'] as Tier[]) {
+    if (!tiers.includes(tier)) continue;
+    const at1 = tierUtil[tier] / os;
+    if (at1 > 0) minOs = Math.min(minOs, Math.floor((1 / at1) * 2) / 2);
+  }
+  minOs = fabric.kind === 'ddc' ? 1 : clamp(minOs, 1, MAX_OVERSUB);
+  const worst = Math.max(...tiers.map((tier) => tierUtil[tier]), 0);
+  const congestion = worst > 1 ? 1 / worst : 1;
+  let idealS = 0;
+  let actualS = 0;
+  for (const group of ['tp', 'cp', 'pp', 'ep', 'pd'] as ServingGroup[]) {
+    const leafBytes = groupByTier[group].leaf;
+    if (leafBytes <= 0) continue;
+    const ideal = leafBytes / nicCap;
+    const crossesMultipath = groupByTier[group].spine > 0 || groupByTier[group].core > 0;
+    idealS += ideal;
+    actualS += ideal / (crossesMultipath ? (group === 'ep' ? etaA2a : eta) : 1);
+  }
+  const lbEff = idealS > 0 ? idealS / actualS : 1;
+  const commEfficiencyEffective = clamp(lbEff * congestion * (fabric.speedFactor ?? 1) * (hasCore ? 0.98 : 1), 0.05, 1);
+  const l2l3 = l2l3Verdict({ endpoints: allocatedGpus, switches: fabric.leaves, k: fabric.k, multiTenant: fabric.multiTenant, planes: fabric.planes });
+  const iEpInDomain = decode.tp * decode.ep <= U;
+  const a2aBw = iEpInDomain ? suCap : nicCap;
+  const epDecodeTokPerSPerUser = moe && decode.ep > 1 ? a2aBw / (Math.max(1, moeLayerCount(L, moe)) * 2 * kTop * h * 3 * ((decode.ep - 1) / decode.ep)) : Number.POSITIVE_INFINITY;
+  notes.unshift(
+    `Inference demand window: ${inf.requestsPerSec} req/s × (${inf.inputTokens} prefill + ${inf.outputTokens} decode tokens), spread across ${replicas} ${inf.disaggregated ? 'P/D deployment pairs' : 'aggregated replicas'} on ${allocatedGpus} layout GPUs.`,
+    `Topology: prefill TP${prefill.tp}·PP${prefill.pp}·EP${prefill.ep}·CP${prefill.cp} (${prefillGpus} GPUs/instance); decode TP${decode.tp}·PP${decode.pp}·EP${decode.ep}·CP${decode.cp} (${decodeGpus} GPUs/instance).`,
+    `The physical envelope comes from the GPU racks placed in Layout: scale-up domain ${U}, ${gpu.nicGbps} Gb/s scale-out per GPU, η_host ${nicBusbw.toFixed(3)}, η_fabric ${eta.toFixed(3)}.`,
+  );
+  if (inf.disaggregated) notes.push(`P/D KV transfer ${(kvTransferBps * 8 / GB).toFixed(1)} Gb/s aggregate; the tier load uses the busiest sharded endpoint across the prefill and decode pools.`);
+  if (worst > 1) notes.push(`The requested inference rate exceeds the busiest tier by ×${worst.toFixed(2)}; latency SLOs require more replicas, more NIC bandwidth, or a topology change.`);
+
+  return {
+    mode: 'inference',
+    basis: 'inference-second',
+    perTier,
+    bytesPerStepByGroup: { tp: groupBytes.tp / GB, cp: groupBytes.cp / GB, pp: groupBytes.pp / GB, dp: 0, ep: groupBytes.ep / GB, pd: groupBytes.pd / GB },
+    minOversubscription: minOs,
+    l2l3,
+    commEfficiencyEffective,
+    stepTimeS: 1,
+    notes,
+    eta: fabric.eta,
+    etaHost: nicBusbw,
+    ...(etaA2a !== eta ? { etaA2a } : {}),
+    groupTier: { tp: groupRoute.tp, cp: groupRoute.cp, pp: groupRoute.pp, dp: '-', ep: groupRoute.ep, pd: groupRoute.pd },
+    physical: physicalEnvelope(gpu, suCap, nicCap),
+    inference: {
+      kvBytesPerToken,
+      kvTransferGbps: kvTransferBps * 8 / GB,
+      epDecodeTokPerSPerUser,
+      attention: model.mla ? 'mla' : 'gqa',
+      requestsPerSec: inf.requestsPerSec,
+      prefillTokensPerSec,
+      decodeTokensPerSec,
+      allocatedGpus,
+      replicas,
+      disaggregated: inf.disaggregated,
+      prefillParallelism: prefill,
+      decodeParallelism: decode,
+      prefillInstanceGpus: prefillGpus,
+      decodeInstanceGpus: decodeGpus,
+    },
+  };
+}
+
+function workloadCalibrationMatches(w: WorkloadBlueprint): boolean {
+  const calibration = w.calibration;
+  if (w.inference) {
+    return calibration?.mode === 'inference'
+      && ((calibration.tokensPerSecPerGpu ?? 0) > 0 || (calibration.measuredTokensPerSec ?? 0) > 0);
+  }
+  return calibration?.mode === 'training'
+    && ((calibration.tflopsPerGpu ?? 0) > 0 || (calibration.mfu ?? 0) > 0 || (calibration.measuredTokensPerSec ?? 0) > 0);
+}
+
+function trafficQuality(workloads: readonly WorkloadBlueprint[]): NonNullable<TrafficReport['quality']> {
+  const calibratedWorkloads = workloads.filter(workloadCalibrationMatches).length;
+  const offeredDemandWorkloads = workloads
+    .filter((w) => w.inference && !workloadCalibrationMatches(w))
+    .map((w) => w.id);
+  const workloadCount = workloads.length;
+  return {
+    level: calibratedWorkloads === workloadCount && workloadCount > 0 ? 'calibrated' : calibratedWorkloads > 0 ? 'mixed' : 'estimate',
+    workloadCount,
+    calibratedWorkloads,
+    offeredDemandWorkloads,
+    assumptions: [
+      'Training bursts are reconstructed from the modeled step time and peak/mean tier utilization.',
+      'Inference stays flat at configured offered demand unless an arrival-rate trace is available.',
+      'Rail and ECMP load are analytical balanced-flow estimates, not switch-port telemetry.',
+    ],
+  };
+}
+
+const tierRateKey: Record<Tier, keyof NetworkTrafficTimePoint> = {
+  'scale-up': 'scaleUpGBps', leaf: 'leafGBps', spine: 'spineGBps', core: 'coreGBps',
+};
+const tierUtilKey: Record<Tier, keyof NetworkTrafficTimePoint> = {
+  'scale-up': 'scaleUpUtilization', leaf: 'leafUtilization', spine: 'spineUtilization', core: 'coreUtilization',
+};
+
+/** Fraction of one display-second covered by a periodic burst. Sub-sampling avoids aliasing for sub-second steps. */
+function burstFraction(second: number, periodS: number, duty: number): number {
+  if (duty <= 0) return 0;
+  if (duty >= 1) return 1;
+  const period = Math.max(0.001, periodS);
+  let active = 0;
+  for (let i = 0; i < TRACE_SUBSAMPLES; i++) {
+    const at = second + (i + 0.5) / TRACE_SUBSAMPLES;
+    if ((at % period) / period < duty) active++;
+  }
+  return active / TRACE_SUBSAMPLES;
+}
+
+/** Representative trace. It is deliberately deterministic and never invents an inference arrival pattern. */
+function trafficTrace(report: TrafficReport): NetworkTrafficTimePoint[] {
+  const byTier = new Map(report.perTier.map((tier) => [tier.tier, tier]));
+  return Array.from({ length: TRAFFIC_TRACE_SECONDS }, (_, t) => {
+    const point: NetworkTrafficTimePoint = {
+      t,
+      scaleUpGBps: 0, leafGBps: 0, spineGBps: 0, coreGBps: 0,
+      scaleUpUtilization: 0, leafUtilization: 0, spineUtilization: 0, coreUtilization: 0,
+    };
+    for (const tier of TIERS) {
+      const value = byTier.get(tier);
+      if (!value) continue;
+      if (report.mode === 'training') {
+        const peakUtil = Math.max(0, value.utilization);
+        const meanUtil = Math.max(0, value.utilizationAvg ?? peakUtil);
+        const duty = peakUtil > 0 ? clamp(meanUtil / peakUtil, 0, 1) : 0;
+        const pulse = burstFraction(t, Math.max(0.001, report.stepTimeS), duty);
+        const meanRate = value.bytesPerStepGB / Math.max(0.001, report.stepTimeS);
+        point[tierRateKey[tier]] = duty > 0 ? (meanRate / duty) * pulse : 0;
+        point[tierUtilKey[tier]] = peakUtil * pulse;
+      } else {
+        point[tierRateKey[tier]] = value.bytesPerStepGB;
+        point[tierUtilKey[tier]] = value.utilization;
+      }
+    }
+    return point;
+  });
+}
+
+function finalizeSingleTraffic(report: TrafficReport, workload: WorkloadBlueprint, allocatedGpus: number): TrafficReport {
+  report.scope = 'single';
+  report.workloadIds = [workload.id];
+  report.allocatedGpus = allocatedGpus;
+  report.quality = trafficQuality([workload]);
+  report.trafficTrace = trafficTrace(report);
+  if (report.quality.offeredDemandWorkloads.length) {
+    report.notes.push('Inference network values are a configured offered-demand envelope. They are not an achieved-throughput or latency-SLO prediction until a matching inference benchmark is attached.');
+  }
+  return report;
+}
+
+/** Build and run a selected inference scenario against the layout-derived GPU and fabric envelope. */
+export function analyzeInferenceTraffic(input: TrafficInput): TrafficReport | undefined {
+  const inf = input.workload.inference;
+  if (!inf) return undefined;
+  const prefill = inferenceParallelismFor(inf, 'prefill');
+  const decode = inferenceParallelismFor(inf, 'decode');
+  const unit = inf.disaggregated ? inferenceReplicaGpus(prefill) + inferenceReplicaGpus(decode) : inferenceReplicaGpus(prefill);
+  const built = buildTrafficEnvelope(input, unit, 'bf16', 'Inference service');
+  if (!built) return undefined;
+  const report = computeInferenceTraffic({ model: input.workload.model, inference: inf, gpus: built.gpus, gpu: built.gpu, fabric: built.fabric });
+  const etaInUse = etaFor(input.project.network.scaleOut);
+  report.eta = { ...report.eta!, sourceType: etaInUse.sourceType, ...(etaInUse.url ? { url: etaInUse.url } : {}), ...(etaInUse.conditions ? { conditions: etaInUse.conditions } : {}), ...(etaInUse.nominalValue !== undefined ? { nominalValue: etaInUse.nominalValue } : {}), ...(etaInUse.measuredAt ? { measuredAt: etaInUse.measuredAt } : {}), hostSourceType: etaInUse.hostSourceType, hostCitation: etaInUse.hostCitation };
+  report.notes.push(...built.notes);
+  if (built.plan.kind === 'ddc' && built.plan.notes.length) report.notes.push(...built.plan.notes);
+  if (input.network.notes.length) report.notes.push(...input.network.notes);
+  report.workloadId = input.workload.id;
+  return finalizeSingleTraffic(report, input.workload, report.inference?.allocatedGpus ?? built.gpus);
 }
 
 /** Build the traffic spec from the project / network result and run the model for a training blueprint. */
 export function analyzeTraffic(input: TrafficInput): TrafficReport | undefined {
+  if (input.workload.inference) return analyzeInferenceTraffic(input);
   const built = buildTrafficSpec(input);
   if (!built) return undefined;
   const { project, network, workload: w } = input;
@@ -616,7 +1019,111 @@ export function analyzeTraffic(input: TrafficInput): TrafficReport | undefined {
   if (plan.kind === 'ddc' && plan.notes.length) report.notes.push(...plan.notes);
   if (network.notes.length) report.notes.push(...network.notes);
   report.workloadId = w.id;
-  return report;
+  return finalizeSingleTraffic(report, w, built.spec.gpus);
+}
+
+export interface AggregateTrafficInput {
+  project: Project;
+  workloads: WorkloadBlueprint[];
+  ctx: Ctx;
+  network: NetworkResult;
+}
+
+const routeRank = (route: string) => route === 'leaf+spine+core' ? 4 : route === 'leaf+spine' ? 3 : route === 'leaf' ? 2 : route === 'scale-up' ? 1 : 0;
+
+/**
+ * Combine every eligible workload as a concurrent facility demand. Workload shares are expected to be normalized with
+ * `analysedBlueprint` before this function is called, so the aggregate does not silently allocate more GPUs than the layout.
+ */
+export function analyzeAggregateTraffic(input: AggregateTrafficInput): TrafficReport | undefined {
+  const pairs = input.workloads
+    .map((workload) => ({ workload, report: analyzeTraffic({ ...input, workload }) }))
+    .filter((pair): pair is { workload: WorkloadBlueprint; report: TrafficReport } => !!pair.report);
+  if (!pairs.length) return undefined;
+
+  const totalGpus = pairs.reduce((sum, pair) => sum + Math.max(0, pair.report.allocatedGpus ?? 0), 0);
+  if (!(totalGpus > 0)) return undefined;
+  const presentTiers = TIERS.filter((tier) => pairs.some((pair) => pair.report.perTier.some((row) => row.tier === tier)));
+  const aggregateTrace: NetworkTrafficTimePoint[] = Array.from({ length: TRAFFIC_TRACE_SECONDS }, (_, t) => {
+    const point: NetworkTrafficTimePoint = {
+      t,
+      scaleUpGBps: 0, leafGBps: 0, spineGBps: 0, coreGBps: 0,
+      scaleUpUtilization: 0, leafUtilization: 0, spineUtilization: 0, coreUtilization: 0,
+    };
+    for (const { report } of pairs) {
+      const gpus = Math.max(0, report.allocatedGpus ?? 0);
+      const sample = report.trafficTrace?.[t];
+      if (!sample || gpus <= 0) continue;
+      for (const tier of TIERS) {
+        point[tierRateKey[tier]] += Number(sample[tierRateKey[tier]]) * gpus;
+        point[tierUtilKey[tier]] += Number(sample[tierUtilKey[tier]]) * gpus / totalGpus;
+      }
+    }
+    return point;
+  });
+
+  const perTier: TrafficReport['perTier'] = presentTiers.map((tier) => {
+    const rates = aggregateTrace.map((point) => Number(point[tierRateKey[tier]]));
+    const utilizations = aggregateTrace.map((point) => Number(point[tierUtilKey[tier]]));
+    const meanRate = rates.reduce((sum, value) => sum + value, 0) / Math.max(1, rates.length);
+    const utilization = Math.max(0, ...utilizations);
+    const utilizationAvg = utilizations.reduce((sum, value) => sum + value, 0) / Math.max(1, utilizations.length);
+    const capacityPerGpu = pairs.find((pair) => pair.report.perTier.some((row) => row.tier === tier))
+      ?.report.perTier.find((row) => row.tier === tier)?.capacityGBps ?? 0;
+    return {
+      tier,
+      bytesPerStepGB: meanRate,
+      utilization,
+      utilizationAvg,
+      headroom: utilization > 0 ? 1 / utilization - 1 : Number.POSITIVE_INFINITY,
+      capacityGBps: capacityPerGpu * totalGpus,
+    };
+  });
+
+  const groupKeys = ['tp', 'cp', 'pp', 'dp', 'ep', 'pd'] as const;
+  const groups = Object.fromEntries(groupKeys.map((group) => [group, pairs.reduce((sum, { report }) => {
+    const perGpu = report.bytesPerStepByGroup[group] ?? 0;
+    const rate = report.mode === 'training' ? perGpu / Math.max(0.001, report.stepTimeS) : perGpu;
+    return sum + rate * Math.max(0, report.allocatedGpus ?? 0);
+  }, 0)])) as TrafficReport['bytesPerStepByGroup'];
+
+  const groupTier = Object.fromEntries(groupKeys.map((group) => {
+    const routes = pairs.map(({ report }) => report.groupTier?.[group] ?? '-');
+    return [group, routes.reduce((worst, route) => routeRank(route) > routeRank(worst) ? route : worst, '-')];
+  })) as NonNullable<TrafficReport['groupTier']>;
+  const weighted = (value: (report: TrafficReport) => number) => pairs.reduce((sum, { report }) => sum + value(report) * Math.max(0, report.allocatedGpus ?? 0), 0) / totalGpus;
+  const l3 = pairs.find(({ report }) => report.l2l3.recommendation === 'l3');
+  const quality = trafficQuality(pairs.map((pair) => pair.workload));
+  quality.assumptions.unshift('All listed workloads are modeled as concurrent; no scheduler start offsets or measured arrival trace are available.');
+  quality.assumptions.push('Workloads are assumed to be uniformly distributed across their allocated GPU endpoints; per-port hotspots require telemetry or an explicit placement map.');
+  const detailedNotes = pairs.flatMap(({ workload, report }) => report.notes.map((note) => `[${workload.name}] ${note}`));
+
+  return {
+    mode: 'aggregate',
+    basis: 'aggregate-second',
+    scope: 'aggregate',
+    workloadIds: pairs.map((pair) => pair.workload.id),
+    allocatedGpus: totalGpus,
+    perTier,
+    bytesPerStepByGroup: groups,
+    minOversubscription: Math.min(...pairs.map((pair) => pair.report.minOversubscription)),
+    l2l3: l3?.report.l2l3 ?? pairs[0].report.l2l3,
+    commEfficiencyEffective: weighted((report) => report.commEfficiencyEffective),
+    stepTimeS: 1,
+    notes: [
+      `Concurrent aggregate of ${pairs.length} workloads on ${totalGpus} allocated GPUs. Training is converted from GB/step to GB/s and inference remains configured offered demand.`,
+      ...quality.assumptions,
+      ...(quality.offeredDemandWorkloads.length ? [`${quality.offeredDemandWorkloads.length} inference workload(s) have no matching throughput calibration; their contribution is demand, not verified achieved traffic.`] : []),
+      ...detailedNotes,
+    ],
+    eta: pairs[0].report.eta,
+    etaHost: weighted((report) => report.etaHost ?? 1),
+    ...(pairs.some((pair) => pair.report.etaA2a !== undefined) ? { etaA2a: weighted((report) => report.etaA2a ?? report.eta?.value ?? 1) } : {}),
+    groupTier,
+    trafficTrace: aggregateTrace,
+    quality,
+    physical: pairs[0].report.physical,
+  };
 }
 
 export interface EtaSensitivityPoint {

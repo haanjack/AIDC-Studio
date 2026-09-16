@@ -15,7 +15,7 @@ import {
 } from '@aidc/core';
 import { fmtInt, fmtPower } from '../app/format.ts';
 import { useT } from '../i18n/index.ts';
-import { useApp, type PageId } from '../store/appStore.ts';
+import { useApp } from '../store/appStore.ts';
 import { NumberField, Section, SelectField, SourceBadge, Stat } from '../ui/controls.tsx';
 import { Icon } from '../ui/icons.tsx';
 
@@ -161,40 +161,8 @@ export function ArchitecturePanel() {
     setPage(page);
   };
 
-  const flow: { page: PageId; label: string }[] = [
-    { page: 'workload', label: t('architecture.flow.demand') },
-    { page: 'architecture', label: t('architecture.flow.architecture') },
-    { page: 'site', label: t('architecture.flow.site') },
-    { page: 'layout', label: t('architecture.flow.layout') },
-    { page: 'power', label: t('architecture.flow.power') },
-    { page: 'network', label: t('architecture.flow.network') },
-    { page: 'cooling', label: t('architecture.flow.cooling') },
-    { page: 'cost', label: t('architecture.flow.cost') },
-    { page: 'schedule', label: t('architecture.flow.schedule') },
-    { page: 'drawings', label: t('architecture.flow.drawings') },
-    { page: 'docs', label: t('architecture.flow.docs') },
-  ];
-
   return (
     <div>
-      <Section title={t('architecture.workflow.title')}>
-        <div className="card">
-          <p className="hint" style={{ marginTop: 0 }}>{t('architecture.workflow.desc')}</p>
-          <div className="row wrap" style={{ gap: 5 }} data-architecture-flow>
-            {flow.map((x, i) => (
-              <button key={x.page} className={`btn ghost sm ${x.page === 'architecture' ? 'active' : ''}`} onClick={() => setPage(x.page)}>
-                <span className="mono">{i + 1}</span> {x.label}
-              </button>
-            ))}
-          </div>
-          <p className="caption" style={{ marginBottom: 0 }}>
-            {t('architecture.workflow.sources')}{' '}
-            <a href="https://docs.nvidia.com/dgx-superpod/design-guides/dgx-superpod-data-center-design-h100/latest/planning.html" target="_blank" rel="noreferrer">NVIDIA planning</a>
-            {' · '}<a href="https://docs.nvidia.com/dgx-superpod/design-guide-cabling-data-centers/latest/considerations.html" target="_blank" rel="noreferrer">logical → physical network</a>
-          </p>
-        </div>
-      </Section>
-
       <Section title={t('architecture.setup.title')}>
         <div className="card">
           <div className="fields-2">

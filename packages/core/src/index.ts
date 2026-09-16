@@ -45,6 +45,7 @@ export * from './layout/remedies.ts';
 export * from './workload/presets.ts';
 export * from './workload/calibration.ts';
 export * from './workload/shares.ts';
+export * from './workload/inference.ts';
 export * from './catalog/images.ts';
 export * from './catalog/assetManifest.ts';
 export * from './catalog/flops.ts';

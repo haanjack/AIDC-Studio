@@ -113,11 +113,11 @@ The deterministic IP/ASN planner produces:
 - location, rail/fabric, subnet, device, NIC, and address review views;
 - CSV, HTML, and deployment-bundle outputs.
 
-Workload traffic can be overlaid on network topology to visualise hot links, loaded rails, oversubscribed tiers, and expected bottlenecks.
+Workload traffic can be overlaid on network topology to visualise hot links, loaded rails, oversubscribed tiers, and expected bottlenecks. The evaluator accepts a selected training or inference scenario; inference combines layout GPU racks with prefill/decode TP/PP/EP/CP and optional P/D KV-cache transfer rather than requiring a training job. Scale-up capacity and naming come from the primary GPU rack actually placed in Layout: for example, an AMD UBB8 result uses its Infinity Fabric domain while an HGX result uses NVLink. The UI distinguishes per-GPU demand from effective one-way capacity and shows the published bidirectional value and bus-bandwidth factor used to derive it. The bottleneck map presents scale-up and scale-out as separate fabrics—not consecutive hops—and identifies the configured InfiniBand, RoCE, Ethernet, or DDC fabric; an idle Leaf/NIC explicitly means that the selected parallel group never leaves its scale-up domain.
 
-### 7. Model workload demand
+### 7. Model and validate workloads
 
-Workload blueprints describe training, fine-tuning, and inference. Inputs include model shape, precision, tokens, parallelism, communication, checkpointing, availability, and accelerator allocation. The engine estimates:
+Workload blueprints describe training, fine-tuning, and inference. The default simulation is cluster-first: the GPU-rack model carrying the most accelerators in the placed layout supplies physical HBM, the runtime-usable HBM limit, scale-up domain, compute throughput and bandwidth. Inputs then include model shape, precision, tokens, parallelism, communication, checkpointing, availability, and accelerator allocation. The engine estimates:
 
 - compute and communication time;
 - effective throughput and MFU;
@@ -127,7 +127,11 @@ Workload blueprints describe training, fine-tuning, and inference. Inputs includ
 - accelerator, DU, MW, and floor-space demand;
 - time-varying power profile.
 
+Inference blueprints define TP, PP, EP, and CP per replica; DP is derived from the replica count required by demand. TP has a memory-fit floor based on per-GPU weight residency, one maximum-length KV sequence, selected precisions, and a runtime reserve. Request rate changes replica count rather than this floor. Aggregated serving uses one topology. Prefill/decode disaggregation may use different topologies for the two pools, so the calculation preserves separate replica sizes and counts and includes the inter-pool KV-transfer path. Dense-model EP, expert-count mismatches, and memory-minimum groups that leave the scale-up domain are reported explicitly. Backend workspace, fragmentation, throughput, and latency remain calibration inputs rather than claimed measurements.
+
 Public model presets are starting points. Benchmark calibration should be used before treating results as project commitments.
+
+For greenfield work, an optional reverse-sizing what-if can translate a workload target into a GPU, DU, MW, and floor-area proposal. The proposal is handed back to Platform & units for review; it does not change the current cluster or masquerade as a simulation of hardware that has not been placed.
 
 ### 8. Plan cost and schedule
 
@@ -149,22 +153,23 @@ Available deliverables include:
 
 ## User interface structure
 
-The left navigation follows the delivery sequence:
+The left navigation follows the default cluster-first delivery sequence:
 
 1. Overview
-2. Site
-3. Architecture and standards
+2. Architecture and standards
+3. Site
 4. Layout
-5. Power
-6. Cooling and thermal
+5. Workload
+6. Power
 7. Network and IP map
-8. Workload
-9. Catalog
-10. Cost
-11. Schedule
-12. Documents and drawings
+8. Cooling and thermal
+9. Cost
+10. Schedule
+11. Drawings
+12. Documents
+13. Catalog
 
-Catalog authoring supports the workflow but is not itself a delivery phase. Templates and compute platforms are configured from the architecture/layout flow and reuse catalog definitions.
+Catalog authoring supports the workflow but is not itself a delivery phase. Templates and compute platforms are configured from the architecture/layout flow and reuse catalog definitions. Workload retains an optional demand-first resize loop for greenfield studies, but all simulation results remain labelled with the placed hardware basis.
 
 ## Data provenance
 

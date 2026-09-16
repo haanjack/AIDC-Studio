@@ -241,8 +241,8 @@ describe('workloads', () => {
     expect(infer.gpusRequired!).toBeLessThanOrEqual(infer.gpus);
     expect(infer.maxRequestsPerSec!).toBeGreaterThan(400);
     expect(infer.tpotMs!).toBeLessThanOrEqual(40.1);
-    // v2 contract: decode uses catalog memBandwidthGBps (GB300: 8 TB/s) instead of the 1.1 TB/s proxy → 144 → 80 GPUs
-    expect(infer.gpusRequired).toBe(80);
+    // P/D pools are sized independently: 19 × 8-GPU prefill + 5 × 8-GPU decode = 192 GPUs.
+    expect(infer.gpusRequired).toBe(192);
     expect(infer.details?.memBandwidthGBps).toBeCloseTo(8 * 8000 * 0.85, 6);
   });
 

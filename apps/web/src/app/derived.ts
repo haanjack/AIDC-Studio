@@ -195,7 +195,12 @@ export const WORKLOAD_TEMPLATES: { key: string; label: string; labelKey: string;
     make: () => ({
       id: uid('wl'), name: 'MoE Inference — DeepSeek-R1 671B', kind: 'llm-inference', gpuShare: 0.25, presetId: 'deepseek-r1',
       model: presetModel('deepseek-r1', 32768),
-      inference: { requestsPerSec: 400, inputTokens: 2000, outputTokens: 600, ttftSloMs: 1000, tpotSloMs: 40, disaggregated: true, kvPrecision: 'fp8' },
+      inference: {
+        requestsPerSec: 400, inputTokens: 2000, outputTokens: 600, ttftSloMs: 1000, tpotSloMs: 40, disaggregated: true, weightPrecision: 'fp8', kvPrecision: 'fp8',
+        parallelism: { tp: 4, pp: 1, ep: 2, cp: 1 },
+        prefillParallelism: { tp: 4, pp: 1, ep: 2, cp: 1 },
+        decodeParallelism: { tp: 4, pp: 1, ep: 2, cp: 1 },
+      },
       durationDays: 30,
     }),
   },
@@ -205,7 +210,7 @@ export const WORKLOAD_TEMPLATES: { key: string; label: string; labelKey: string;
       id: uid('wl'), name: 'MoE Inference — gpt-oss-120b', kind: 'llm-inference', gpuShare: 0.1, presetId: 'gpt-oss-120b',
       model: presetModel('gpt-oss-120b', 8192),
       // SLOs = MLPerf Inference Server limits for gpt-oss-120b (TTFT 3,000 ms / TPOT 80 ms p99, loadgen/mlperf.conf)
-      inference: { requestsPerSec: 500, inputTokens: 1000, outputTokens: 1000, ttftSloMs: 3000, tpotSloMs: 80, disaggregated: false, kvPrecision: 'fp8' },
+      inference: { requestsPerSec: 500, inputTokens: 1000, outputTokens: 1000, ttftSloMs: 3000, tpotSloMs: 80, disaggregated: false, weightPrecision: 'fp8', kvPrecision: 'fp8', parallelism: { tp: 1, pp: 1, ep: 2, cp: 1 } },
       durationDays: 30,
     }),
   },
@@ -214,7 +219,12 @@ export const WORKLOAD_TEMPLATES: { key: string; label: string; labelKey: string;
     make: () => ({
       id: uid('wl'), name: 'MoE Inference — Qwen3 235B-A22B', kind: 'llm-inference', gpuShare: 0.1, presetId: 'qwen3-235b-a22b',
       model: presetModel('qwen3-235b-a22b', 32768),
-      inference: { requestsPerSec: 300, inputTokens: 2000, outputTokens: 800, ttftSloMs: 1000, tpotSloMs: 50, disaggregated: true, kvPrecision: 'fp8' },
+      inference: {
+        requestsPerSec: 300, inputTokens: 2000, outputTokens: 800, ttftSloMs: 1000, tpotSloMs: 50, disaggregated: true, weightPrecision: 'fp8', kvPrecision: 'fp8',
+        parallelism: { tp: 2, pp: 1, ep: 2, cp: 1 },
+        prefillParallelism: { tp: 2, pp: 1, ep: 2, cp: 1 },
+        decodeParallelism: { tp: 2, pp: 1, ep: 2, cp: 1 },
+      },
       durationDays: 30,
     }),
   },
@@ -223,9 +233,8 @@ export const WORKLOAD_TEMPLATES: { key: string; label: string; labelKey: string;
     make: () => ({
       id: uid('wl'), name: 'Chat Inference — Llama 3.1 70B', kind: 'llm-inference', gpuShare: 0.1, presetId: 'llama3.1-70b',
       model: presetModel('llama3.1-70b', 16384),
-      inference: { requestsPerSec: 1500, inputTokens: 1200, outputTokens: 400, ttftSloMs: 600, tpotSloMs: 30, disaggregated: false, kvPrecision: 'fp8' },
+      inference: { requestsPerSec: 1500, inputTokens: 1200, outputTokens: 400, ttftSloMs: 600, tpotSloMs: 30, disaggregated: false, weightPrecision: 'fp8', kvPrecision: 'fp8', parallelism: { tp: 2, pp: 1, ep: 1, cp: 1 } },
       durationDays: 30,
     }),
   },
 ];
-

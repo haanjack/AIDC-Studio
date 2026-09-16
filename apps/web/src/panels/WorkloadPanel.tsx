@@ -1,10 +1,10 @@
 import { useMemo, useState, type ReactNode } from 'react';
 import {
   acceleratorPeakSource, applyModelPreset, BENCHMARKS, calibrateFromBenchmark, calibrationRecord, catalogItems, REF_POD_TEMPLATE, effectiveShare,
-  fillRemainder, findBenchmark, findCatalogItem, findModelPreset, MFU_DEFAULT, MODEL_PRESETS, NODE_SPECS, normalizeShares, peakFlopsFor, podSizing,
+  fillRemainder, findBenchmark, findCatalogItem, findModelPreset, INFERENCE_HBM_UTILIZATION, inferenceMemoryEstimate, inferenceParallelismFor, inferenceReplicaGpus, MFU_DEFAULT, MODEL_PRESETS, NODE_SPECS, normalizeShares, peakFlopsFor, podSizing,
   presetModifiedFields, scaleWarning, shareState, takeShareDetailed,
   type BenchmarkRow, type CalibrationPrecision, type CalibrationWarning, type CatalogItem, type SizingSuggestion, type UserMeasurement,
-  type WorkloadAnalysis, type WorkloadBlueprint, type WorkloadKind,
+  type InferenceMemoryEstimate, type InferenceParallelism, type WorkloadAnalysis, type WorkloadBlueprint, type WorkloadKind,
 } from '@aidc/core';
 import { useApp } from '../store/appStore.ts';
 import { WORKLOAD_TEMPLATES } from '../app/derived.ts';
@@ -12,7 +12,7 @@ import { downloadText } from '../app/api.ts';
 import { fmt1, fmt2, fmtInt, fmtMoney, fmtPct, fmtPower } from '../app/format.ts';
 import { useI18n } from '../i18n/index.ts';
 import { BarChart, LineChart } from '../ui/charts.tsx';
-import { DataTable, Empty, Field, NumberField, Section, Seg, SelectField, SourceBadge, Stat, StatusIcon, TextField, Toggle } from '../ui/controls.tsx';
+import { DataTable, Empty, Field, NumberField, Section, Seg, SelectField, SourceBadge, Stat, StatusIcon, StatusLabel, TextField, Toggle } from '../ui/controls.tsx';
 import { Icon } from '../ui/icons.tsx';
 import { Term } from '../ui/Term.tsx';
 
@@ -52,6 +52,50 @@ function ExternalLink({ href, children }: { href: string; children: ReactNode })
   return <a href={href} target="_blank" rel="noreferrer">{children}</a>;
 }
 
+function InferenceParallelFields({ title, value, onChange, memory, t }: {
+  title: string;
+  value: InferenceParallelism;
+  onChange: (next: InferenceParallelism) => void;
+  memory?: InferenceMemoryEstimate;
+  t: Translate;
+}) {
+  const minTp = memory?.minimumTp ?? 1;
+  const set = (key: keyof InferenceParallelism, raw: number) => onChange({ ...value, [key]: Math.max(key === 'tp' ? minTp : 1, Math.round(raw)) });
+  return (
+    <div className="card" style={{ background: 'var(--surface-2)' }}>
+      <div className="row" style={{ justifyContent: 'space-between', marginBottom: 6 }}>
+        <strong>{title}</strong>
+        <span className="badge">{t('workload.parallel.replicaGpus', { n: inferenceReplicaGpus(value) })}</span>
+      </div>
+      {memory && (
+        <div style={{ marginBottom: 8 }}>
+          <div className="row wrap" style={{ gap: 6 }}>
+            <StatusLabel severity={memory.fits ? 'good' : 'error'}>{t(memory.fits ? 'workload.memory.fits' : 'workload.memory.oom')}</StatusLabel>
+            <span className="hint">{t('workload.memory.breakdown', {
+              weights: fmt1(memory.weightGBPerGpu), kv: fmt1(memory.kvGBPerGpu), used: fmt1(memory.totalGBPerGpu),
+              usable: fmt1(memory.usableHbmGB), physical: fmt1(memory.gpuMemoryGB), pct: fmtPct(memory.hbmUtilization),
+            })}</span>
+          </div>
+          <p className="caption" style={{ margin: '4px 0 0' }}>{t('workload.memory.basis', { wp: memory.weightPrecision.toUpperCase(), kvp: memory.kvPrecision.toUpperCase(), tokens: fmtInt(memory.tokenResidency) })}</p>
+          {memory.minimumTp ? (
+            <div className="row wrap" style={{ gap: 6, marginTop: 5 }}>
+              <span className={`pill ${memory.crossesScaleUp ? 'warn' : 'good'}`}><span className="dot" />{t('workload.memory.minimumTp', { tp: memory.minimumTp })}</span>
+              {memory.topology.tp !== memory.minimumTp && <button className="btn sm" onClick={() => onChange({ ...value, tp: memory.minimumTp! })}>{t('workload.memory.apply')}</button>}
+              {memory.crossesScaleUp && <span className="hint">{t('workload.memory.scaleOutWarning')}</span>}
+            </div>
+          ) : <p className="hint warn-text" style={{ margin: '5px 0 0' }}>{t('workload.memory.noFit')}</p>}
+        </div>
+      )}
+      <div className="fields-2">
+        <NumberField label={t('workload.f.infTpOverride')} value={value.tp} min={minTp} onChange={(v) => set('tp', v)} hint={<Affects tags={['memory', 'bytes']} text={t('workload.h.infTp')} t={t} />} />
+        <NumberField label="CP" value={value.cp} min={1} onChange={(v) => set('cp', v)} hint={<Affects tags={['memory', 'bytes']} text={t('workload.h.infCp')} t={t} />} />
+        <NumberField label="PP" value={value.pp} min={1} onChange={(v) => set('pp', v)} hint={<Affects tags={['memory', 'bytes']} text={t('workload.h.infPp')} t={t} />} />
+        <NumberField label="EP" value={value.ep} min={1} onChange={(v) => set('ep', v)} hint={<Affects tags={['memory', 'bytes']} text={t('workload.h.infEp')} t={t} />} />
+      </div>
+    </div>
+  );
+}
+
 export function WorkloadPanel() {
   const project = useApp((s) => s.project);
   const analysis = useApp((s) => s.analysis);
@@ -75,15 +119,23 @@ export function WorkloadPanel() {
   const days = (v: number | undefined) => (v == null || !Number.isFinite(v) ? '–' : `${fmt1(v)} ${t('workload.u.days')}`);
   const notesOf = (a: WorkloadAnalysis) => (locale === 'ko' ? a.notes : a.notesEn?.length ? a.notesEn : a.notes);
 
-  // ── workload-first sizing (규모 산정) ──
-  const gpuRackId = useMemo(() => {
-    const counts = new Map<string, number>();
+  // The simulation always follows the dominant accelerator platform actually placed in Layout. The neutral fallback is
+  // used only by the optional reverse-sizing what-if when no cluster has been placed yet.
+  const placedGpuPlatform = useMemo(() => {
+    const counts = new Map<string, { gpus: number; racks: number }>();
     for (const e of project.equipment) {
       const it = findCatalogItem(e.catalogId);
-      if (it?.category === 'gpu-rack') counts.set(it.id, (counts.get(it.id) ?? 0) + (it.compute?.gpus ?? 0));
+      if (it?.category !== 'gpu-rack' || typeof e.meta?.computeSlot === 'string') continue;
+      const cur = counts.get(it.id) ?? { gpus: 0, racks: 0 };
+      cur.gpus += it.compute?.gpus ?? 0;
+      cur.racks += 1;
+      counts.set(it.id, cur);
     }
-    return [...counts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? REF_POD_TEMPLATE.gpuRackCatalogId;
+    const primary = [...counts.entries()].sort((a, b) => b[1].gpus - a[1].gpus)[0];
+    return primary ? { id: primary[0], ...primary[1] } : undefined;
   }, [project.equipment]);
+  const placedGpuRack = placedGpuPlatform ? findCatalogItem(placedGpuPlatform.id) : undefined;
+  const gpuRackId = placedGpuPlatform?.id ?? REF_POD_TEMPLATE.gpuRackCatalogId;
   const gpuRack = findCatalogItem(gpuRackId);
   const [targetKind, setTargetKind] = useState<TargetKind>('train-days');
   const [targetDays, setTargetDays] = useState(90);
@@ -172,6 +224,14 @@ export function WorkloadPanel() {
     w.model = applyModelPreset(w.model, p);
     w.presetId = p.id;
     if (!p.moe && w.training) w.training.ep = 1;
+    if (w.inference) {
+      const keys = ['parallelism', 'prefillParallelism', 'decodeParallelism'] as const;
+      for (const key of keys) {
+        const topology = w.inference[key];
+        if (!topology) continue;
+        topology.ep = p.moe ? Math.max(2, topology.ep) : 1;
+      }
+    }
     // fix v2 2차 (QA): an MoE preset on a dense training blueprint kept EP = 1 → 0 all-to-all bytes, optimistic step time
     if (p.moe && w.training && (w.training.ep ?? 1) <= 1) {
       const tplEp = WORKLOAD_TEMPLATES.find((x) => x.presetId === p.id)?.make().training?.ep;
@@ -183,11 +243,33 @@ export function WorkloadPanel() {
   });
   const preset = wl?.presetId ? findModelPreset(wl.presetId) : undefined;
   const modified = wl ? presetModifiedFields(wl) : [];
+  const setInferenceServingMode = (mode: 'aggregated' | 'disaggregated') => setW((w) => {
+    const cur = w.inference;
+    if (!cur || cur.disaggregated === (mode === 'disaggregated')) return;
+    if (mode === 'disaggregated') {
+      const common = inferenceParallelismFor(cur, 'aggregated');
+      cur.prefillParallelism ??= { ...common };
+      cur.decodeParallelism ??= { ...common };
+      cur.disaggregated = true;
+    } else {
+      const decode = inferenceParallelismFor(cur, 'decode');
+      cur.parallelism ??= { ...decode };
+      cur.disaggregated = false;
+    }
+  });
 
   const dense = findBenchmark(EVIDENCE_DENSE)?.derived?.tflopsPerGpu;
   const moe = findBenchmark(EVIDENCE_MOE)?.derived?.tflopsPerGpu;
   const tr = wl?.training;
   const inf = wl?.inference;
+  const inferenceMemory = (() => {
+    const c = placedGpuRack?.compute;
+    if (!wl || !inf || !c?.gpuMemoryGB) return undefined;
+    const estimate = (stage: 'aggregated' | 'prefill' | 'decode') => inferenceMemoryEstimate(wl, stage, inferenceParallelismFor(inf, stage), c.gpuMemoryGB, c.scaleUp.domainSize);
+    return inf.disaggregated
+      ? { prefill: estimate('prefill'), decode: estimate('decode') }
+      : { aggregated: estimate('aggregated') };
+  })();
   const kindOptions: { value: WorkloadKind; label: string }[] = (['llm-pretrain', 'llm-finetune', 'llm-inference', 'hpc-simulation'] as WorkloadKind[]).map((k) => ({ value: k, label: t(`workload.kind.${k}`) }));
 
   return (
@@ -222,7 +304,39 @@ export function WorkloadPanel() {
         )}
       </div>
 
-      {/* ── B. blueprint list + share meter ── */}
+      {/* ── B. placed-cluster simulation basis ── */}
+      <div className="card" style={{ gridColumn: '1 / -1' }}>
+        <div className="row wrap" style={{ justifyContent: 'space-between', gap: 8 }}>
+          <h3 style={{ margin: 0 }}>{t('workload.hardware.title')}</h3>
+          <div className="row wrap" style={{ gap: 6 }}>
+            <button className="btn ghost sm" onClick={() => setPage('architecture')}><Icon name="architecture" size={13} />{t('workload.hardware.changePlatform')}</button>
+            <button className="btn ghost sm" onClick={() => setPage('layout')}><Icon name="layout" size={13} />{t('workload.hardware.openLayout')}</button>
+          </div>
+        </div>
+        {placedGpuRack?.compute ? (
+          <>
+            <div className="grid-4" style={{ marginTop: 10 }}>
+              <Stat label={t('workload.hardware.platform')} value={placedGpuRack.name} delta={<span>{placedGpuRack.vendor} · <SourceBadge source={placedGpuRack.source} /></span>} />
+              <Stat label={t('workload.hardware.cluster')} value={t('workload.hardware.gpus', { n: fmtInt(clusterGpus) })} delta={t('workload.hardware.primaryRacks', { racks: placedGpuPlatform?.racks ?? 0, gpus: placedGpuPlatform?.gpus ?? 0 })} />
+              <Stat label={t('workload.hardware.hbm')} value={`${fmt1(placedGpuRack.compute.gpuMemoryGB)} GB/GPU`} delta={t('workload.hardware.usable', { n: fmt1(placedGpuRack.compute.gpuMemoryGB * INFERENCE_HBM_UTILIZATION), pct: fmtPct(INFERENCE_HBM_UTILIZATION) })} />
+              <Stat
+                label={t('workload.hardware.scaleUp')}
+                value={placedGpuRack.compute.scaleUp.family ?? ({ nvlink: 'NVLink', ualink: 'UALink', 'esun-ethernet': 'ESUN Ethernet', pcie: 'PCIe', 'vendor-proprietary': t('workload.hardware.proprietary'), none: t('workload.hardware.none') }[placedGpuRack.compute.scaleUp.kind])}
+                delta={t('workload.hardware.domain', { n: placedGpuRack.compute.scaleUp.domainSize })}
+              />
+            </div>
+            <p className="hint" style={{ margin: '8px 0 0' }}>{t('workload.hardware.actual')}</p>
+            {(placedGpuRack.vendor === 'Generic' || placedGpuRack.source === 'estimate') && <p className="hint warn-text" style={{ margin: '5px 0 0' }}>{t('workload.hardware.estimateWarning')}</p>}
+          </>
+        ) : (
+          <div style={{ marginTop: 10 }}>
+            <StatusLabel severity="warning">{t('workload.hardware.missing')}</StatusLabel>
+            <p className="hint" style={{ margin: '6px 0 0' }}>{t('workload.hardware.missingBody')}</p>
+          </div>
+        )}
+      </div>
+
+      {/* ── C. blueprint list + share meter ── */}
       <div className="card">
         <h3>{t('workload.list.title')}</h3>
         <DataTable
@@ -301,7 +415,12 @@ export function WorkloadPanel() {
               <TextField label={t('workload.f.name')} value={wl.name} onChange={(v) => setW((w) => { w.name = v; })} hint={<Affects tags={[]} text={t('workload.h.name')} t={t} />} />
               <SelectField label={t('workload.f.kind')} value={wl.kind} options={kindOptions} hint={<Affects tags={['compute', 'memory', 'bytes']} text={t('workload.h.kind')} t={t} />} onChange={(v) => setW((w) => {
                 w.kind = v;
-                if (v === 'llm-inference' && !w.inference) w.inference = { requestsPerSec: 200, inputTokens: 2000, outputTokens: 500, ttftSloMs: 1000, tpotSloMs: 50, disaggregated: true, kvPrecision: 'fp8' };
+                if (v === 'llm-inference' && !w.inference) w.inference = {
+                  requestsPerSec: 200, inputTokens: 2000, outputTokens: 500, ttftSloMs: 1000, tpotSloMs: 50, disaggregated: true, weightPrecision: 'fp8', kvPrecision: 'fp8',
+                  parallelism: { tp: 2, pp: 1, ep: w.model.moe ? 2 : 1, cp: 1 },
+                  prefillParallelism: { tp: 2, pp: 1, ep: w.model.moe ? 2 : 1, cp: 1 },
+                  decodeParallelism: { tp: 2, pp: 1, ep: w.model.moe ? 2 : 1, cp: 1 },
+                };
                 if (v !== 'llm-inference' && !w.training) w.training = { tokensB: 1000, globalBatchTokensM: 8, precision: 'fp8', tp: 8, pp: 1, ep: 1, cp: 1, zeroStage: 1, microBatchSeqs: 1, checkpointEveryMin: 30, checkpointDurationS: 60, mtbfHoursPerGpu: 50000 };
               })} />
               <NumberField label={t('workload.f.share')} step={0.05} min={0.01} max={1} value={wl.gpuShare} onChange={(v) => setW((w) => { w.gpuShare = v; })} hint={<Affects tags={['compute', 'power']} text={t('workload.h.share', { gpus: fmtInt(Math.floor(effectiveShare(project.workloads, wl) * clusterGpus)) })} t={t} />} />
@@ -381,7 +500,48 @@ export function WorkloadPanel() {
           {inf && wl.kind === 'llm-inference' && (
             <>
               <Section title={<Term id="parallelism">{t('workload.group.parallel')}</Term>}>
-                <p className="hint" style={{ margin: 0 }}>{t('workload.group.parallelInf')}</p>
+                <Field
+                  label={<Term id="prefill-decode">{t('workload.f.servingMode')}</Term>}
+                  hint={<Affects tags={['compute', 'memory', 'bytes']} text={t(inf.disaggregated ? 'workload.h.servingDisaggregated' : 'workload.h.servingAggregated')} t={t} />}
+                >
+                  <Seg
+                    value={inf.disaggregated ? 'disaggregated' as const : 'aggregated' as const}
+                    options={[
+                      { value: 'aggregated' as const, label: t('workload.serving.aggregated') },
+                      { value: 'disaggregated' as const, label: t('workload.serving.disaggregated') },
+                    ]}
+                    onChange={setInferenceServingMode}
+                  />
+                </Field>
+                <p className="hint" style={{ margin: '0 0 8px' }}>{t('workload.group.parallelInf')}</p>
+                <div className={inf.disaggregated ? 'grid-2' : undefined}>
+                  {inf.disaggregated ? (
+                    <>
+                      <InferenceParallelFields
+                        title={t('workload.parallel.prefill')}
+                        value={inferenceParallelismFor(inf, 'prefill')}
+                        onChange={(next) => setW((w) => { w.inference!.prefillParallelism = next; })}
+                        memory={inferenceMemory?.prefill}
+                        t={t}
+                      />
+                      <InferenceParallelFields
+                        title={t('workload.parallel.decode')}
+                        value={inferenceParallelismFor(inf, 'decode')}
+                        onChange={(next) => setW((w) => { w.inference!.decodeParallelism = next; })}
+                        memory={inferenceMemory?.decode}
+                        t={t}
+                      />
+                    </>
+                  ) : (
+                    <InferenceParallelFields
+                      title={t('workload.parallel.aggregated')}
+                      value={inferenceParallelismFor(inf, 'aggregated')}
+                      onChange={(next) => setW((w) => { w.inference!.parallelism = next; })}
+                      memory={inferenceMemory?.aggregated}
+                      t={t}
+                    />
+                  )}
+                </div>
               </Section>
               <Section title={t('workload.group.inference')}>
                 <div className="fields-2">
@@ -390,10 +550,8 @@ export function WorkloadPanel() {
                   <NumberField label={t('workload.f.outputTokens')} value={inf.outputTokens} onChange={(v) => setW((w) => { w.inference!.outputTokens = v; })} hint={<Affects tags={['compute', 'calib']} text={t('workload.h.outputTokens')} t={t} />} />
                   <NumberField label={<Term id="ttft">TTFT SLO</Term>} unit="ms" value={inf.ttftSloMs} onChange={(v) => setW((w) => { w.inference!.ttftSloMs = v; })} hint={<Affects tags={['compute']} text={t('workload.h.ttft')} t={t} />} />
                   <NumberField label={<Term id="tpot">TPOT SLO</Term>} unit="ms" value={inf.tpotSloMs} onChange={(v) => setW((w) => { w.inference!.tpotSloMs = v; })} hint={<Affects tags={['compute', 'calib']} text={t('workload.h.tpot', { intv: fmt1(1000 / Math.max(1, inf.tpotSloMs)) })} t={t} />} />
+                  <SelectField label={t('workload.f.weightPrecision')} value={inf.weightPrecision ?? 'fp8'} options={[{ value: 'fp16', label: 'FP16' }, { value: 'bf16', label: 'BF16' }, { value: 'fp8', label: 'FP8' }, { value: 'fp4', label: 'FP4' }]} onChange={(v) => setW((w) => { w.inference!.weightPrecision = v; })} hint={<Affects tags={['memory']} text={t('workload.h.weightPrecision')} t={t} />} />
                   <SelectField label={<Term id="kv-cache">{t('workload.f.kvPrecision')}</Term>} value={inf.kvPrecision ?? 'fp8'} options={[{ value: 'fp16', label: 'FP16' }, { value: 'bf16', label: 'BF16' }, { value: 'fp8', label: 'FP8' }, { value: 'fp4', label: 'FP4' }]} onChange={(v) => setW((w) => { w.inference!.kvPrecision = v; })} hint={<Affects tags={['memory', 'bytes']} text={t('workload.h.kvPrecision')} t={t} />} />
-                  <Field label={<Term id="prefill-decode">{t('workload.f.disagg')}</Term>} hint={<Affects tags={['bytes', 'compute']} text={t('workload.h.disagg')} t={t} />}>
-                    <Toggle label={inf.disaggregated ? t('workload.f.disaggOn') : t('workload.f.disaggOff')} checked={inf.disaggregated} onChange={(v) => setW((w) => { w.inference!.disaggregated = v; })} />
-                  </Field>
                 </div>
               </Section>
             </>
@@ -438,7 +596,7 @@ export function WorkloadPanel() {
         <CalibrationCard key={wl.id} wl={wl} wa={wa} gpuRack={gpuRack} setW={setW} t={t} locale={locale} notify={notify} />
       )}
 
-      {/* ── E. sizing ── */}
+      {/* ── E. optional reverse-sizing what-if ── */}
       {wl && (
         <div className="card wl-form" style={{ gridColumn: '1 / -1' }}>
           <h3>{t('workload.size.title')}</h3>
@@ -488,6 +646,14 @@ export function WorkloadPanel() {
             {wa.stepTimeS != null && <Stat label={t('workload.res.step')} value={`${fmt2(wa.stepTimeS)} s`} delta={`${t('workload.res.stepDelta', { pct: fmtPct((wa.commTimeS ?? 0) / Math.max(1e-9, wa.stepTimeS)) })}${analysis?.network.traffic ? t('workload.res.effComm', { pct: fmtPct(analysis.network.traffic.commEfficiencyEffective) }) : ''}`} />}
             {wa.gpusRequired != null && <Stat label={t('workload.res.sloGpus')} value={fmtInt(wa.gpusRequired)} delta={`${t('workload.res.maxRps', { rps: fmt1(wa.maxRequestsPerSec) })}${wl.calibration?.mode === 'inference' ? ` · ${t('workload.badge.calibrated')}` : ''}`} />}
             {wa.ttftMs != null && <Stat label={t('workload.res.ttftTpot')} value={`${fmtInt(wa.ttftMs)} / ${fmtInt(wa.tpotMs)} ms`} />}
+            {inf && wa.details && (inf.disaggregated ? (
+              <>
+                <Stat label={t('workload.res.prefillTopology')} value={`TP${wa.details.prefillTp}/PP${wa.details.prefillPp}/EP${wa.details.prefillEp}/CP${wa.details.prefillCp}`} delta={t('workload.res.instances', { n: wa.details.prefillReplicas ?? 0, g: wa.details.prefillInstanceGpus ?? 0 })} />
+                <Stat label={t('workload.res.decodeTopology')} value={`TP${wa.details.decodeTp}/PP${wa.details.decodePp}/EP${wa.details.decodeEp}/CP${wa.details.decodeCp}`} delta={t('workload.res.instances', { n: wa.details.decodeReplicas ?? 0, g: wa.details.decodeInstanceGpus ?? 0 })} />
+              </>
+            ) : (
+              <Stat label={t('workload.res.aggregatedTopology')} value={`TP${wa.details.decodeTp}/PP${wa.details.decodePp}/EP${wa.details.decodeEp}/CP${wa.details.decodeCp}`} delta={t('workload.res.instances', { n: wa.details.decodeReplicas ?? 0, g: wa.details.decodeInstanceGpus ?? 0 })} />
+            ))}
             <Stat label={t('workload.res.power')} value={fmtPower(wa.avgPowerKW)} delta={t('workload.res.peak', { p: fmtPower(wa.peakPowerKW) })} />
             <Stat label={t('workload.res.energy')} value={`${fmtInt(wa.energyMWh)} MWh`} delta={`${fmtMoney(wa.energyCostUSD, project.pricing)}${wa.tokensPerKWh ? ` · ${fmtInt(wa.tokensPerKWh)} tok/kWh` : ''}`} />
           </div>

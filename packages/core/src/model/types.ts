@@ -842,6 +842,8 @@ export interface NetworkDesign {
   frontend: AuxNetwork;
   storage: AuxNetwork;
   oob: AuxNetwork;
+  /** Workload scenario shown in Network > Traffic. When absent/invalid, training is preferred, then inference. */
+  trafficWorkloadId?: Id;
   /** Addressing is optional so schema-version-1 projects load without migration. */
   addressing?: NetworkAddressing;
   cabling: {
@@ -860,6 +862,18 @@ export interface NetworkDesign {
 // ───────────────────────────── Workload blueprints ─────────────────────────────
 
 export type WorkloadKind = 'llm-pretrain' | 'llm-finetune' | 'llm-inference' | 'hpc-simulation';
+
+/** Model-parallel topology of one inference replica. Data parallelism is the number of replicas and is derived by the simulator. */
+export interface InferenceParallelism {
+  /** tensor-parallel degree */
+  tp: number;
+  /** pipeline-parallel stages */
+  pp: number;
+  /** expert-parallel degree (MoE only) */
+  ep: number;
+  /** context-parallel degree */
+  cp: number;
+}
 
 export interface WorkloadBlueprint {
   id: Id;
@@ -897,6 +911,8 @@ export interface WorkloadBlueprint {
     attentionWindow?: number;
     /** one global (full-attention) layer every n layers (gpt-oss 2, Gemma 3 6, Llama 4 4) — long-context KV grows only on global layers */
     globalLayerInterval?: number;
+    /** fraction of layers whose KV state grows per token (hybrid linear/KDA + full-attention models); fixed-size recurrent state is excluded */
+    kvCacheLayerFraction?: number;
   };
   training?: {
     tokensB: number; // total training tokens (billions)
@@ -940,8 +956,16 @@ export interface WorkloadBlueprint {
     ttftSloMs: number;
     tpotSloMs: number;
     disaggregated: boolean; // prefill/decode split
+    /** inference weight storage precision used for HBM-fit sizing (default fp8) */
+    weightPrecision?: 'fp16' | 'bf16' | 'fp8' | 'fp4';
     /** KV-cache precision (default fp8) */
     kvPrecision?: 'fp16' | 'bf16' | 'fp8' | 'fp4';
+    /** topology of an aggregated replica, and the default for either P/D stage when its override is absent */
+    parallelism?: InferenceParallelism;
+    /** prefill replica topology when `disaggregated` is true */
+    prefillParallelism?: InferenceParallelism;
+    /** decode replica topology when `disaggregated` is true */
+    decodeParallelism?: InferenceParallelism;
   };
   /** simulated days of the operating profile */
   durationDays: number;
@@ -1413,9 +1437,58 @@ export interface PortLink {
   fabric: string;
 }
 
+export type TrafficTierName = 'scale-up' | 'leaf' | 'spine' | 'core';
+
+/** One-second sample. Bandwidth is per GPU for a single workload and facility-total for an aggregate report. */
+export interface NetworkTrafficTimePoint {
+  t: number;
+  scaleUpGBps: number;
+  leafGBps: number;
+  spineGBps: number;
+  coreGBps: number;
+  scaleUpUtilization: number;
+  leafUtilization: number;
+  spineUtilization: number;
+  coreUtilization: number;
+}
+
+export interface TrafficEvidenceQuality {
+  level: 'calibrated' | 'mixed' | 'estimate';
+  workloadCount: number;
+  calibratedWorkloads: number;
+  /** inference workloads without matched throughput calibration are demand envelopes, not achieved-throughput predictions */
+  offeredDemandWorkloads: Id[];
+  assumptions: string[];
+}
+
+/** Physical per-accelerator envelope actually used by the traffic calculation. */
+export interface TrafficPhysicalEnvelope {
+  platformId?: Id;
+  platformName?: string;
+  acceleratorName?: string;
+  scaleUpKind: ComputeSpec['scaleUp']['kind'];
+  scaleUpName: string;
+  scaleUpDomain: number;
+  /** Published aggregate bidirectional bandwidth. */
+  scaleUpRawBidirectionalGBpsPerGpu: number;
+  /** One-direction bandwidth after the traffic model's bus-bandwidth factor. */
+  scaleUpEffectiveGBpsPerGpu: number;
+  scaleUpBusbwFactor: number;
+  /** Aggregate NIC bandwidth after host bus-bandwidth efficiency. */
+  scaleOutEffectiveGBpsPerGpu: number;
+  scaleOutFabric?: FabricTech;
+}
+
 export interface TrafficReport {
+  /** Aggregate reports combine every eligible workload as a concurrent one-second demand. */
+  mode?: 'training' | 'inference' | 'aggregate';
+  basis?: 'training-step' | 'inference-second' | 'aggregate-second';
+  scope?: 'single' | 'aggregate';
+  workloadIds?: Id[];
+  allocatedGpus?: number;
   perTier: { tier: 'scale-up' | 'leaf' | 'spine' | 'core'; bytesPerStepGB: number; utilization: number; headroom: number; utilizationAvg?: number; capacityGBps?: number }[];
-  bytesPerStepByGroup: { tp: number; pp: number; dp: number; ep: number; cp: number };
+  /** GB per training step, GB/s per GPU for inference, or facility-total GB/s for aggregate (see `basis`). */
+  bytesPerStepByGroup: { tp: number; pp: number; dp: number; ep: number; cp: number; pd?: number };
   /** smallest oversubscription with headroom ≥ 0 on every tier */
   minOversubscription: number;
   l2l3: { recommendation: 'l2' | 'l3'; reason: string };
@@ -1425,6 +1498,11 @@ export interface TrafficReport {
   notes: string[];
   /** blueprint the report was computed for (workload.ts consumes the report only for this blueprint) */
   workloadId?: Id;
+  /** representative 600-second bandwidth profile; training reconstructs step bursts, inference is flat without an arrival trace */
+  trafficTrace?: NetworkTrafficTimePoint[];
+  quality?: TrafficEvidenceQuality;
+  /** Hardware envelope used in this report; lets the UI distinguish NVLink, Infinity Fabric, UALink, and PCIe. */
+  physical?: TrafficPhysicalEnvelope;
   // ── v2 (S2) optional detail — all derived values carry their SpecSource in `sources` ──
   /** load-balancing efficiency η actually used, its class and where the number comes from */
   eta?: {
@@ -1459,9 +1537,24 @@ export interface TrafficReport {
   etaA2a?: number;
   mfuEffective?: number;
   /** placement of each parallel group: which tier its collectives run on */
-  groupTier?: { tp: string; cp: string; pp: string; dp: string; ep: string };
-  /** minimal inference traffic block (KV bytes/token, P/D KV transfer, EP all-to-all decode bound) */
-  inference?: { kvBytesPerToken: number; kvTransferGbps: number; epDecodeTokPerSPerUser: number; attention: 'gqa' | 'mla' };
+  groupTier?: { tp: string; cp: string; pp: string; dp: string; ep: string; pd?: string };
+  /** inference traffic block (KV bytes/token, P/D KV transfer, EP all-to-all decode bound and stage topology) */
+  inference?: {
+    kvBytesPerToken: number;
+    kvTransferGbps: number;
+    epDecodeTokPerSPerUser: number;
+    attention: 'gqa' | 'mla';
+    requestsPerSec?: number;
+    prefillTokensPerSec?: number;
+    decodeTokensPerSec?: number;
+    allocatedGpus?: number;
+    replicas?: number;
+    disaggregated?: boolean;
+    prefillParallelism?: InferenceParallelism;
+    decodeParallelism?: InferenceParallelism;
+    prefillInstanceGpus?: number;
+    decodeInstanceGpus?: number;
+  };
 }
 
 export interface PlacementCandidate {
@@ -2063,6 +2156,8 @@ export interface ModelPreset {
   headDim?: number;
   /** local / chunked attention (long-context KV counts only global layers) */
   attention?: { slidingWindow?: number; pattern?: string; chunkSize?: number; noRopeGlobalEvery?: number };
+  /** fraction of layers whose KV state grows per token; used for hybrid linear/KDA + full-attention architectures */
+  kvCacheLayerFraction?: number;
   denseFfn?: number;
   license?: string;
   notes?: string;

@@ -170,10 +170,11 @@ describe('joined reference pair through the layout generator (integration v2 2ì°
     expect(a.issues.filter((i) => i.domain === 'network' && i.severity === 'error')).toEqual([]);
     expect(d.equipment.filter((e) => e.hallId === 'hall-a' && e.networkRole === 'inter-hall-core').length).toBe(plan.racks);
     for (const h of ['hall-a', 'hall-b']) expect(d.equipment.filter((e) => e.hallId === h && e.networkRole === 'scale-out-spine').length, h).toBe(12);
-    // one cluster: the workload, traffic and IB-vs-RoCE sizing all use the cluster's GPUs (engines/workload.ts jobClusterGpus)
+    // one cluster: the workload and its private traffic model use the cluster's GPUs; the Network panel exposes the concurrent sum
     const train = a.workloads.find((w) => w.workloadId === 'wl-pretrain-405b')!;
     expect(train.gpus).toBe(Math.floor((0.8 * summary.gpus) / 32) * 32);
-    expect(a.network.traffic?.stepTimeS).toBeCloseTo(train.stepTimeS!, 9);
+    expect(train.details?.stepModel).toBe('traffic-v2');
+    expect(a.network.traffic).toMatchObject({ mode: 'aggregate', basis: 'aggregate-second' });
   });
 
   it('two populated halls split by default: the job and the workload panel use one hallâ€™s GPUs, not the project total', () => {
@@ -182,6 +183,7 @@ describe('joined reference pair through the layout generator (integration v2 2ì°
     const train = a.workloads.find((w) => w.workloadId === 'wl-pretrain-405b')!;
     expect(a.summary.gpus).toBe(13824);
     expect(train.gpus).toBe(Math.floor((0.8 * 6912) / 32) * 32);
-    expect(a.network.traffic?.stepTimeS).toBeCloseTo(train.stepTimeS!, 9);
+    expect(train.details?.stepModel).toBe('traffic-v2');
+    expect(a.network.traffic).toMatchObject({ mode: 'aggregate', basis: 'aggregate-second' });
   });
 });

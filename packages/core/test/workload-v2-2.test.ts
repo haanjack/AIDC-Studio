@@ -3,8 +3,8 @@ import { describe, expect, it } from 'vitest';
 import {
   MLPERF_NOTICE,
   acceleratorPeakSource, analyzeProject, applyModelPreset, BENCHMARKS, calibrateFromBenchmark, calibrationRecord, createNvidiaReferenceProject, fillRemainder,
-  findBenchmark, findCatalogItem, findModelPreset, gpuShareTotal, MODEL_PRESETS, normalizeShares, peakFlopsFor, presetModelFields,
-  presetModifiedFields, scaleWarning, shareIssues, shareState, takeShare, takeShareDetailed, trainingFlopsPerToken,
+  findBenchmark, findCatalogItem, findModelPreset, gpuShareTotal, inferenceMemoryEstimate, MODEL_PRESETS, normalizeShares, peakFlopsFor, presetModelFields,
+  modelParallelGroupGpus, presetModifiedFields, scaleWarning, shareIssues, shareState, takeShare, takeShareDetailed, trainingFlopsPerToken,
   type WorkloadBlueprint,
 } from '../src/index.ts';
 
@@ -14,6 +14,43 @@ const bp = (id: string, gpuShare: number, tp = 8, pp = 1): WorkloadBlueprint => 
   training: { tokensB: 1, globalBatchTokensM: 4, precision: 'bf16', tp, pp, ep: 1, checkpointEveryMin: 30, checkpointDurationS: 60, mtbfHoursPerGpu: 50000 },
 });
 const shares = (ws: WorkloadBlueprint[]) => ws.map((w) => Number(w.gpuShare.toFixed(3)));
+
+describe('inference memory-first TP sizing', () => {
+  const inference = (weightPrecision: 'fp8' | 'bf16'): WorkloadBlueprint => ({
+    id: 'mem', name: '70B serving', kind: 'llm-inference', gpuShare: 1, durationDays: 1,
+    model: { name: '70B', paramsB: 70, activeParamsB: 70, layers: 80, hiddenSize: 8192, seqLen: 8192, numHeads: 64, kvHeads: 8, headDim: 128 },
+    inference: { requestsPerSec: 100, inputTokens: 4096, outputTokens: 512, ttftSloMs: 1000, tpotSloMs: 50, disaggregated: false, weightPrecision, kvPrecision: 'fp8', parallelism: { tp: 1, pp: 1, ep: 1, cp: 1 } },
+  });
+
+  it('derives the minimum TP from weight + one-sequence KV memory, independent of RPS', () => {
+    const fp8 = inference('fp8');
+    const plan = inferenceMemoryEstimate(fp8, 'aggregated', fp8.inference!.parallelism!, 80, 8)!;
+    expect(plan).toMatchObject({ fits: false, minimumTp: 2, crossesScaleUp: false, weightPrecision: 'fp8', gpuMemoryGB: 80, hbmUtilization: 0.9, usableHbmGB: 72 });
+    const fitted = inferenceMemoryEstimate(fp8, 'aggregated', { tp: 2, pp: 1, ep: 1, cp: 1 }, 80, 8)!;
+    expect(fitted.fits).toBe(true);
+    fp8.inference!.requestsPerSec = 100_000;
+    expect(inferenceMemoryEstimate(fp8, 'aggregated', fp8.inference!.parallelism!, 80, 8)!.minimumTp).toBe(2);
+    expect(inferenceMemoryEstimate(inference('bf16'), 'aggregated', { tp: 1, pp: 1, ep: 1, cp: 1 }, 80, 8)!.minimumTp).toBe(4);
+  });
+
+  it('flags a memory minimum that crosses the scale-up domain instead of hiding the network cost', () => {
+    const w = inference('bf16');
+    w.model.paramsB = 405;
+    w.model.activeParamsB = 405;
+    w.model.numHeads = 128;
+    w.model.kvHeads = 8;
+    expect(inferenceMemoryEstimate(w, 'aggregated', { tp: 1, pp: 1, ep: 1, cp: 1 }, 80, 8)).toMatchObject({ minimumTp: 16, crossesScaleUp: true });
+  });
+
+  it('reports the true head-compatible capacity floor rather than forcing a power-of-two TP', () => {
+    const w = inference('bf16');
+    w.model.paramsB = 145;
+    w.model.activeParamsB = 145;
+    w.model.numHeads = 40;
+    w.model.kvHeads = 8;
+    expect(inferenceMemoryEstimate(w, 'aggregated', { tp: 1, pp: 1, ep: 1, cp: 1 }, 80, 8)).toMatchObject({ minimumTp: 5 });
+  });
+});
 
 describe('GPU shares (r2-models.md §5)', () => {
   it('total, state and proportional normalisation', () => {
@@ -69,8 +106,9 @@ describe('GPU shares (r2-models.md §5)', () => {
     const train = a.workloads.find((w) => w.workloadId === 'wl-pretrain-405b')!;
     const tpp = 8 * 4;
     expect(train.gpus).toBe(Math.floor((gpus * (1 / 1.25)) / tpp) * tpp);
-    // the traffic report is computed on the same scaled share → one step-time model
-    expect(a.network.traffic?.stepTimeS).toBeCloseTo(train.stepTimeS!, 9);
+    // the Network panel is a concurrent aggregate, while the workload keeps a private report on the same scaled share
+    expect(a.network.traffic).toMatchObject({ mode: 'aggregate', basis: 'aggregate-second' });
+    expect(train.details?.stepModel).toBe('traffic-v2');
     const infer = a.workloads.find((w) => w.workloadId === 'wl-infer-moe')!;
     expect(infer.gpus).toBe(Math.floor(gpus * (0.25 / 1.25)));
     expect(train.notesEn?.[0]).toMatch(/scaled 80\.0 %/);
@@ -113,6 +151,10 @@ describe('model presets (self-contained dataset, citations re-sourced in N2b)', 
     expect(presetModelFields(findModelPreset('llama4-maverick')!)).toMatchObject({ attentionWindow: 8192, globalLayerInterval: 4, moe: { experts: 128, topK: 1, shared: 1, moeLayerInterval: 2 } });
     expect(presetModelFields(findModelPreset('glm-4.5')!)).toMatchObject({ headDim: 128, moe: { shared: 1, denseLayers: 3 } });
     expect(presetModelFields(findModelPreset('deepseek-v3')!)).toMatchObject({ mla: { dLatent: 512, dRope: 64 }, moe: { nodeLimit: 4, denseLayers: 3 } });
+    expect(presetModelFields(findModelPreset('deepseek-v4-pro')!)).toMatchObject({ headDim: 512, kvHeads: 1, moe: { experts: 384, topK: 6 } });
+    expect(presetModelFields(findModelPreset('deepseek-v4-pro')!).moe?.nodeLimit).toBeUndefined();
+    expect(presetModelFields(findModelPreset('kimi-k3')!)).toMatchObject({ kvCacheLayerFraction: 24 / 93, mla: { dLatent: 512, dRope: 64 }, moe: { experts: 896, topK: 16, shared: 2 } });
+    expect(presetModelFields(findModelPreset('qwen3.5-122b-a10b')!)).toMatchObject({ kvCacheLayerFraction: 0.25, headDim: 256, moe: { experts: 256, topK: 8, shared: 1 } });
     expect(presetModelFields(findModelPreset('llama3.1-405b')!).moe).toBeUndefined();
   });
 
@@ -224,12 +266,55 @@ describe('benchmark calibration', () => {
     inf.calibration = calibrationRecord(r, row);
     const a = analyzeProject({ ...project, workloads: [project.workloads[0], inf] });
     const res = a.workloads.find((w) => w.workloadId === inf.id)!;
-    const g = res.details!.instanceGpus as number;
+    const decodeGpus = res.details!.decodeInstanceGpus as number;
+    const prefillGpus = res.details!.prefillInstanceGpus as number;
+    const prefillReplicas = res.details!.prefillReplicas as number;
     const demand = inf.inference!.requestsPerSec * inf.inference!.outputTokens;
-    expect(res.gpusRequired).toBe(Math.max(1, Math.ceil(demand / (3481 * g))) * g);
+    expect(res.gpusRequired).toBe(prefillReplicas * prefillGpus + Math.max(1, Math.ceil(demand / (3481 * decodeGpus))) * decodeGpus);
     // interactivity above the row's floor is warned
     const strict = structuredClone(inf);
     strict.inference!.tpotSloMs = 10;
     expect(calibrateFromBenchmark(strict, row, gb300).warnings.map((w) => w.code)).toContain('interactivity');
+  });
+});
+
+describe('inference parallelism and P/D disaggregation', () => {
+  it('uses independent prefill/decode topologies and reserves one complete P/D serving unit', () => {
+    const { project } = createNvidiaReferenceProject();
+    const inf = structuredClone(project.workloads.find((w) => w.kind === 'llm-inference')!);
+    inf.model = applyModelPreset(inf.model, findModelPreset('deepseek-r1')!);
+    inf.gpuShare = 1;
+    inf.inference = {
+      ...inf.inference!,
+      disaggregated: true,
+      parallelism: { tp: 2, pp: 1, ep: 1, cp: 1 },
+      prefillParallelism: { tp: 2, pp: 1, ep: 2, cp: 2 },
+      decodeParallelism: { tp: 4, pp: 1, ep: 2, cp: 1 },
+    };
+    expect(modelParallelGroupGpus(inf)).toBe(16); // 8-GPU prefill + 8-GPU decode
+    const a = analyzeProject({ ...project, workloads: [inf] });
+    const r = a.workloads[0];
+    expect(r.details).toMatchObject({
+      prefillInstanceGpus: 8,
+      decodeInstanceGpus: 8,
+      prefillTp: 2,
+      prefillEp: 2,
+      prefillCp: 2,
+      decodeTp: 4,
+      decodeEp: 2,
+      decodeCp: 1,
+    });
+    expect(r.gpusRequired).toBe((r.details!.prefillReplicas as number) * 8 + (r.details!.decodeReplicas as number) * 8);
+    expect(r.notesEn?.some((n) => n.includes('P/D topology'))).toBe(true);
+  });
+
+  it('rejects a topology whose weight shard cannot fit in HBM', () => {
+    const { project } = createNvidiaReferenceProject();
+    const inf = structuredClone(project.workloads.find((w) => w.kind === 'llm-inference')!);
+    inf.gpuShare = 1;
+    inf.inference = { ...inf.inference!, disaggregated: false, parallelism: { tp: 1, pp: 1, ep: 1, cp: 1 } };
+    const r = analyzeProject({ ...project, workloads: [inf] }).workloads[0];
+    expect(r.gpus).toBe(0);
+    expect(r.notesEn?.[0]).toMatch(/usable HBM/);
   });
 });

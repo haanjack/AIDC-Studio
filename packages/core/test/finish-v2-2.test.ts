@@ -136,7 +136,8 @@ describe('templates × compute slots (QA templates majors)', () => {
     const a = analyzeProject(p);
     const primary = p.equipment.filter((e) => e.catalogId === 'amd-mi355x-air-2x').reduce((s, e) => s + (findCatalogItem(e.catalogId)?.compute?.gpus ?? 0), 0);
     expect(a.summary.gpus).toBe(primary);
-    expect(a.issues.some((i) => i.id === 'workload-capacity-wl-infer-moe')).toBe(false);
+    // The inference workload may be capacity-limited on this small two-DU plan; NPU racks still must not inflate its GPU allocation.
+    expect(a.workloads.find((w) => w.workloadId === 'wl-infer-moe')!.gpus).toBe(Math.floor(primary * 0.2));
   });
 
   it('#2: generating another template on a hall does not inherit the previous row shape', () => {

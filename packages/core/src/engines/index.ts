@@ -24,7 +24,7 @@ import { analysedBlueprint, analyzeWorkloadsCtx, simulateWorkload, workloadEnv }
 import { cableTypes } from '../catalog/catalog.ts';
 import { resolveCatalog, withCatalog } from '../catalog/registry.ts';
 import { analyzePlacement } from './placement.ts';
-import { analyzeTraffic } from './traffic.ts';
+import { AGGREGATE_TRAFFIC_ID, analyzeAggregateTraffic, analyzeTraffic } from './traffic.ts';
 import { analyzePowerPaths } from './powerPaths.ts';
 import { interHallGeometry } from './interHall.ts';
 import { analyzeMaxQ } from './maxq.ts';
@@ -35,7 +35,7 @@ export { FABRIC_LABEL, FABRIC_SWITCH, FABRIC_TECH_FACTOR, cableLengthM, chooseCa
 // v2 (S2): placement / DDC / load-balancing helpers
 export { DDC_MAX_NCF, DDC_MAX_NCP, DDC_TABLE, ETA_DEFAULT, FABRIC_LB_DEFAULT, FABRIC_SPINE_SWITCH, LB_LABEL, etaFor, isHgxType, mediumOf, normalizeLeafPlacement, normalizeSpinePlacement, resolveSwitchItem, sizeDdc, type DdcOptions, type DdcSizing } from './network.ts';
 export { interHallLengthM, type EtaInUse } from './network.ts'; // v2 2차 (T2)
-export { MFU_DEFAULT, OVERLAP_DEFAULT, computeTraffic, peakFlopsFor, type TrafficFabric, type TrafficGpu, type TrafficSpec } from './traffic.ts';
+export { AGGREGATE_TRAFFIC_ID, MFU_DEFAULT, OVERLAP_DEFAULT, analyzeAggregateTraffic, computeInferenceTraffic, computeTraffic, peakFlopsFor, type AggregateTrafficInput, type InferenceTrafficSpec, type TrafficFabric, type TrafficGpu, type TrafficSpec } from './traffic.ts';
 export { OVERLAP_FRAMEWORKS, buildTrafficSpec, etaSensitivity, overlapDefaults, projectEtaSensitivity, type EtaSensitivityPoint, type OverlapDefault, type OverlapFramework, type ProjectEtaSensitivity } from './traffic.ts'; // v2 2차 (T2)
 export { PLACEMENT_LABEL, evaluatePlacementCandidate, type PlacementOptions } from './placement.ts';
 export { clearanceZones, findClearanceIntrusions, floorLoadKgPerM2 } from './space.ts';
@@ -43,7 +43,7 @@ export { airDeltaT, dryBulbFraction, wetBulbFraction } from './cooling.ts';
 export { simulateInference, simulateTraining, simulateWorkload, type WorkloadEnv } from './workload.ts';
 // v2 contract exports
 export * from './radix.ts';
-export { analyzeTraffic, type TrafficInput } from './traffic.ts';
+export { analyzeInferenceTraffic, analyzeTraffic, type TrafficInput } from './traffic.ts';
 export { analyzePlacement, type PlacementInput } from './placement.ts';
 // v2 2차 contract exports (T2 cluster/eta/links/ipplan · T3 powerPaths/maxq · T4 coolingTopology)
 export * from './cluster.ts';
@@ -71,13 +71,28 @@ function pipeline(project: Project) {
   const network = analyzeNetworkCtx(ctx);
   const cooling = analyzeCoolingCtx(ctx, network);
   const power = analyzePowerCtx(ctx, network, cooling);
-  // v2 (S2): traffic report for the first training blueprint runs BEFORE the workloads so workload.ts can pick up
-  // `traffic.commEfficiencyEffective`; the spine/core placement comparator only needs the network result
-  const training = project.workloads.find((w) => w.kind === 'llm-pretrain' || w.kind === 'llm-finetune');
-  // v2 2차 (T6): Σ gpuShare > 1 → the traffic engine sees the proportionally scaled share, like workload.ts
-  const traffic = training ? analyzeTraffic({ project, workload: analysedBlueprint(project.workloads, training), ctx, network }) : undefined;
+  // Traffic runs before workload simulation so its measured/derived communication efficiency can feed the selected scenario.
+  // The user may explicitly select a training or inference blueprint; otherwise retain the training-first default for old projects.
+  const eligible = project.workloads.filter((w) => w.training || w.inference);
+  const aggregateSelected = project.network.trafficWorkloadId === AGGREGATE_TRAFFIC_ID
+    || (!project.network.trafficWorkloadId && eligible.length > 1);
+  const selected = eligible.find((w) => w.id === project.network.trafficWorkloadId)
+    ?? eligible.find((w) => w.training)
+    ?? eligible.find((w) => w.inference);
+  // Σ gpuShare > 1 → the traffic engine sees the same proportionally scaled share as workload.ts.
+  const traffic = aggregateSelected
+    ? analyzeAggregateTraffic({ project, workloads: eligible.map((w) => analysedBlueprint(project.workloads, w)), ctx, network })
+    : selected ? analyzeTraffic({ project, workload: analysedBlueprint(project.workloads, selected), ctx, network }) : undefined;
   if (traffic) network.analysis.traffic = traffic;
-  const workloads = analyzeWorkloadsCtx(ctx, network, power);
+  // The aggregate is a presentation/sizing view. Each workload still receives its own traffic report so step time,
+  // inference capacity and communication efficiency never inherit an unrelated facility-average scalar.
+  const trafficByWorkload = aggregateSelected
+    ? new Map(eligible.map((w) => {
+      const analysed = analysedBlueprint(project.workloads, w);
+      return [w.id, analyzeTraffic({ project, workload: analysed, ctx, network })] as const;
+    }).filter((pair): pair is readonly [string, NonNullable<(typeof pair)[1]>] => !!pair[1]))
+    : undefined;
+  const workloads = analyzeWorkloadsCtx(ctx, network, power, trafficByWorkload);
   const cost = analyzeCostCtx(ctx, { network, cooling, power });
   const schedule = analyzeScheduleCtx(ctx, { network, cooling, power });
   const placement = analyzePlacement({ project, ctx, network });

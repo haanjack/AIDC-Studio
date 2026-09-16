@@ -1,6 +1,6 @@
 import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from 'react';
 import {
-  ETA_DEFAULT, LB_LABEL, OVERLAP_FRAMEWORKS, buildCableSchedule, buildIpReview, buildSwitchUnits, cableTypes, calibrateEta, compareFabrics, etaFor, findCatalogItem,
+  AGGREGATE_TRAFFIC_ID, ETA_DEFAULT, LB_LABEL, OVERLAP_FRAMEWORKS, buildCableSchedule, buildIpReview, buildSwitchUnits, cableTypes, calibrateEta, compareFabrics, etaFor, findCatalogItem,
   joinHalls, mediumOf, nominalBusbwGBps, nominalInputsFor, normalizeLeafPlacement, normalizeSpinePlacement, parseCollectiveLog, projectEtaSensitivity, resolveClusters, splitCluster, summarizeCableSchedule,
   type AuxNetwork, type CableScheduleRow, type CatalogItem, type ClusterDef, type ClusterNetworkSummary, type EtaCalibration, type FabricAnalysis, type FabricTech, type LoadBalancing,
   filterIpReview, groupIpPlanByLocation, groupIpPlanByRail, groupIpPlanBySubnet, ipReviewCsv, ipReviewGroupEntries, prefixOf, rangeLabel,
@@ -20,10 +20,14 @@ import { useNetworkNav, type NetworkTabId } from '../app/networkNav.ts';
 import { downloadText } from '../app/api.ts';
 
 type Tab = NetworkTabId;
-type Group = 'tp' | 'cp' | 'pp' | 'dp' | 'ep';
+type TrainingGroup = 'tp' | 'cp' | 'pp' | 'dp' | 'ep';
+type Group = TrainingGroup | 'pd';
 const LB_CLASSES: LoadBalancing[] = ['ecmp', 'qp-scaling', 'te', 'adaptive', 'ddc'];
 const PLACEMENTS: SpinePlacement[] = ['central-end', 'central-center', 'distributed', 'separate-room'];
-const GROUPS: Group[] = ['tp', 'cp', 'pp', 'dp', 'ep'];
+const TRAINING_GROUPS: TrainingGroup[] = ['tp', 'cp', 'pp', 'dp', 'ep'];
+const INFERENCE_GROUPS: Group[] = ['tp', 'cp', 'pp', 'ep', 'pd'];
+const ALL_TRAFFIC_GROUPS: Group[] = ['tp', 'cp', 'pp', 'dp', 'ep', 'pd'];
+const TRAFFIC_TRACE_RATE_KEY = { 'scale-up': 'scaleUpGBps', leaf: 'leafGBps', spine: 'spineGBps', core: 'coreGBps' } as const;
 const ROW_LIMIT = 200;
 const META_BLOG = 'https://engineering.fb.com/2024/03/12/data-center-engineering/building-metas-genai-infrastructure/';
 
@@ -81,11 +85,27 @@ export function NetworkPanel() {
     { value: 'ip', label: t('network.tab.ip') },
   ];
   const lbOptions = LB_CLASSES.map((v) => ({ value: v, label: `${LB_LABEL[v]} (η ${ETA_DEFAULT[v].nominalValue ?? ETA_DEFAULT[v].value}${ETA_DEFAULT[v].nominalValue ? ` · ${t('network.src.nominal')}` : ''})` }));
-  const tierLabel = (tier: TrafficReport['perTier'][number]['tier']) => t(`network.tier.${tier}`);
 
   const na = analysis?.network;
   const traffic = na?.traffic;
+  const tierLabel = (tier: TrafficReport['perTier'][number]['tier']) => tier === 'scale-up' && traffic?.physical?.scaleUpName
+    ? t('network.tier.scale-upNamed', { name: traffic.physical.scaleUpName })
+    : t(`network.tier.${tier}`);
   const trafficWorkload = traffic ? project.workloads.find((w) => w.id === traffic.workloadId) : undefined;
+  const trafficScenarios = project.workloads.filter((w) => w.training || w.inference);
+  const selectedTrafficIsAggregate = net.trafficWorkloadId === AGGREGATE_TRAFFIC_ID
+    || (!net.trafficWorkloadId && trafficScenarios.length > 1);
+  const selectedTrafficWorkload = selectedTrafficIsAggregate ? undefined : trafficScenarios.find((w) => w.id === net.trafficWorkloadId)
+    ?? trafficWorkload
+    ?? trafficScenarios.find((w) => w.training)
+    ?? trafficScenarios[0];
+  const selectedTrafficIsInference = !selectedTrafficIsAggregate && !!selectedTrafficWorkload?.inference;
+  const trafficGroups = traffic?.mode === 'aggregate' ? ALL_TRAFFIC_GROUPS : traffic?.mode === 'inference' ? INFERENCE_GROUPS : TRAINING_GROUPS;
+  const trafficRateMode = traffic?.mode === 'inference' || traffic?.mode === 'aggregate';
+  const trafficDisplayName = traffic?.mode === 'aggregate'
+    ? t('network.traffic.scenarioAggregate')
+    : trafficWorkload?.name ?? traffic?.workloadId ?? t('network.traffic.pathUnknownWorkload');
+  const trafficBottleneck = traffic?.perTier.reduce((worst, tier) => !worst || tier.utilization > worst.utilization ? tier : worst, undefined as TrafficReport['perTier'][number] | undefined);
   const placement = na?.placement;
   const growth = projectGrowth(project);
   const spineNow = normalizeSpinePlacement(so.spinePlacement);
@@ -324,11 +344,25 @@ export function NetworkPanel() {
 
       {tab === 'traffic' && (
         <>
+          <Section title={t('network.traffic.scenarioTitle')}>
+            {trafficScenarios.length ? (
+              <SelectField
+                label={t('network.traffic.scenario')}
+                value={selectedTrafficIsAggregate ? AGGREGATE_TRAFFIC_ID : selectedTrafficWorkload?.id ?? ''}
+                options={[
+                  { value: AGGREGATE_TRAFFIC_ID, label: t('network.traffic.scenarioAggregate') },
+                  ...trafficScenarios.map((w) => ({ value: w.id, label: `${w.name} · ${w.inference ? t('network.traffic.scenarioInference') : t('network.traffic.scenarioTraining')}` })),
+                ]}
+                onChange={(v) => update((d) => { d.network.trafficWorkloadId = v; })}
+                hint={t('network.traffic.scenarioHint')}
+              />
+            ) : <Empty>{t('network.traffic.noScenario')}</Empty>}
+          </Section>
           <EtaSection lbOptions={lbOptions} />
           <MeasurementMethod />
           <CalibrationBox />
-          <SensitivitySection />
-          <OverlapSection />
+          {!selectedTrafficIsAggregate && !selectedTrafficIsInference && <SensitivitySection />}
+          {!selectedTrafficIsAggregate && !selectedTrafficIsInference && <OverlapSection />}
 
           {!traffic ? (
             <Empty>{t('network.traffic.empty')}</Empty>
@@ -336,44 +370,109 @@ export function NetworkPanel() {
             <>
               <Section title={t('network.traffic.pathTitle')}>
                 <div className="card">
-                  <TrafficBottleneckMap traffic={traffic} workloadName={trafficWorkload?.name ?? traffic.workloadId ?? t('network.traffic.pathUnknownWorkload')} />
-                  <p className="caption">{t('network.traffic.pathBasis')}</p>
+                  <TrafficBottleneckMap traffic={traffic} workloadName={trafficDisplayName} />
+                  {traffic.physical && (
+                    <>
+                      <p className="hint" style={{ margin: '4px 0 0' }}>{t('network.traffic.physicalEnvelope', {
+                        platform: traffic.physical.platformName ?? traffic.physical.acceleratorName ?? '—',
+                        fabric: traffic.physical.scaleUpName,
+                        domain: fmtInt(traffic.physical.scaleUpDomain),
+                        effective: fmt1(traffic.physical.scaleUpEffectiveGBpsPerGpu),
+                        raw: fmt1(traffic.physical.scaleUpRawBidirectionalGBpsPerGpu),
+                        busbw: fmtPct(traffic.physical.scaleUpBusbwFactor),
+                        scaleOut: traffic.physical.scaleOutFabric ? t(`network.fabricName.${traffic.physical.scaleOutFabric}`) : t('network.traffic.pathScaleOutUnknown'),
+                      })}</p>
+                      <p className="caption" style={{ margin: '2px 0 0' }}>{t('network.traffic.physicalEnvelopeHint')}</p>
+                    </>
+                  )}
+                  <p className="caption">{t(traffic.mode === 'aggregate' ? 'network.traffic.pathBasisAggregate' : traffic.mode === 'inference' ? 'network.traffic.pathBasisInference' : 'network.traffic.pathBasis')}</p>
                 </div>
               </Section>
 
-              <Section title={t('network.traffic.title')}>
-                <div className="grid-4">
-                  <Stat label={t('network.traffic.step')} value={`${fmt2(traffic.stepTimeS)} s`} delta={t('network.traffic.stepDelta', { comp: fmt2(traffic.computeTimeS), exposed: (traffic.exposedCommS ?? 0).toFixed(3) })} />
-                  <Stat label={t('network.traffic.effEff')} value={fmtPct(traffic.commEfficiencyEffective)} delta={t('network.traffic.effDelta', { eta: eta.value, mfu: fmtPct(traffic.mfuEffective) })} />
-                  <Stat label={<Term id="oversubscription">{t('network.traffic.maxOversub')}</Term>} value={`${traffic.minOversubscription}:1`} delta={`${t('network.traffic.oversubDelta', { n: so.oversubscription })} · ${so.oversubscription <= traffic.minOversubscription ? t('network.traffic.oversubOk') : t('network.traffic.oversubShort')}`} />
-                  <Stat label={t('network.traffic.l2l3')} value={traffic.l2l3.recommendation.toUpperCase()} delta={traffic.groupTier ? `DP → ${traffic.groupTier.dp}` : undefined} />
-                </div>
+              <Section title={t(traffic.mode === 'aggregate' ? 'network.traffic.titleAggregate' : traffic.mode === 'inference' ? 'network.traffic.titleInference' : 'network.traffic.title')}>
+                {traffic.mode === 'aggregate' ? (
+                  <div className="grid-4">
+                    <Stat label={t('network.traffic.aggregateWorkloads')} value={fmtInt(traffic.quality?.workloadCount ?? traffic.workloadIds?.length ?? 0)} delta={t('network.traffic.aggregateConcurrent')} />
+                    <Stat label={t('network.traffic.aggregateAllocation')} value={`${fmtInt(traffic.allocatedGpus ?? 0)} GPU`} delta={t('network.traffic.aggregateAllocationDelta')} />
+                    <Stat label={t('network.traffic.inferenceBottleneck')} value={trafficBottleneck ? `${fmtPct(trafficBottleneck.utilization, 1)}` : '–'} delta={trafficBottleneck ? tierLabel(trafficBottleneck.tier) : undefined} />
+                    <Stat label={t('network.traffic.qualityTitle')} value={t(`network.traffic.quality.${traffic.quality?.level ?? 'estimate'}`)} delta={t('network.traffic.qualityCoverage', { n: traffic.quality?.calibratedWorkloads ?? 0, total: traffic.quality?.workloadCount ?? 0 })} />
+                  </div>
+                ) : traffic.mode === 'inference' ? (
+                  <div className="grid-4">
+                    <Stat label={t('network.traffic.inferenceDemand')} value={`${fmtInt(traffic.inference?.requestsPerSec ?? 0)} req/s`} delta={traffic.inference?.disaggregated ? t('network.inf.modePd') : t('network.inf.modeAggregated')} />
+                    <Stat label={t('network.traffic.inferenceTokens')} value={`${fmtInt((traffic.inference?.prefillTokensPerSec ?? 0) + (traffic.inference?.decodeTokensPerSec ?? 0))} tok/s`} delta={t('network.traffic.inferenceTokensDelta', { prefill: fmtInt(traffic.inference?.prefillTokensPerSec ?? 0), decode: fmtInt(traffic.inference?.decodeTokensPerSec ?? 0) })} />
+                    <Stat label={t('network.traffic.inferenceAllocation')} value={`${fmtInt(traffic.inference?.allocatedGpus ?? 0)} GPU`} delta={t('network.traffic.inferenceReplicas', { n: traffic.inference?.replicas ?? 0 })} />
+                    <Stat label={t('network.traffic.inferenceBottleneck')} value={trafficBottleneck ? `${fmtPct(trafficBottleneck.utilization, 1)}` : '–'} delta={trafficBottleneck ? tierLabel(trafficBottleneck.tier) : undefined} />
+                  </div>
+                ) : (
+                  <div className="grid-4">
+                    <Stat label={t('network.traffic.step')} value={`${fmt2(traffic.stepTimeS)} s`} delta={t('network.traffic.stepDelta', { comp: fmt2(traffic.computeTimeS), exposed: (traffic.exposedCommS ?? 0).toFixed(3) })} />
+                    <Stat label={t('network.traffic.effEff')} value={fmtPct(traffic.commEfficiencyEffective)} delta={t('network.traffic.effDelta', { eta: eta.value, mfu: fmtPct(traffic.mfuEffective) })} />
+                    <Stat label={<Term id="oversubscription">{t('network.traffic.maxOversub')}</Term>} value={`${traffic.minOversubscription}:1`} delta={`${t('network.traffic.oversubDelta', { n: so.oversubscription })} · ${so.oversubscription <= traffic.minOversubscription ? t('network.traffic.oversubOk') : t('network.traffic.oversubShort')}`} />
+                    <Stat label={t('network.traffic.l2l3')} value={traffic.l2l3.recommendation.toUpperCase()} delta={traffic.groupTier ? `DP → ${traffic.groupTier.dp}` : undefined} />
+                  </div>
+                )}
                 <div className="grid-2" style={{ marginTop: 10 }}>
                   <div className="card">
                     <BarChart
-                      title={t('network.traffic.bytesChart')}
-                      data={GROUPS.map((g) => ({ label: t(`network.traffic.group.${g}`), id: g, values: { v: traffic.bytesPerStepByGroup[g] } }))}
-                      series={[{ key: 'v', name: 'GB' }]} format={(v) => `${fmt1(v)} GB`} labelWidth={170}
+                      title={t(traffic.mode === 'aggregate' ? 'network.traffic.bytesChartAggregate' : traffic.mode === 'inference' ? 'network.traffic.bytesChartInference' : 'network.traffic.bytesChart')}
+                      data={trafficGroups.map((g) => ({ label: t(`network.traffic.group.${g}`), id: g, values: { v: traffic.bytesPerStepByGroup[g] ?? 0 } }))}
+                      series={[{ key: 'v', name: trafficRateMode ? 'GB/s' : 'GB' }]} format={(v) => `${fmt1(v)} ${trafficRateMode ? 'GB/s' : 'GB'}`} labelWidth={170}
                     />
-                    {traffic.groupTier && <p className="caption">{t('network.traffic.placementCaption', traffic.groupTier)}</p>}
+                    {traffic.groupTier && <p className="caption">{trafficRateMode ? t('network.traffic.placementCaptionInference', { ...traffic.groupTier, pd: traffic.groupTier.pd ?? '-' }) : t('network.traffic.placementCaption', traffic.groupTier)}</p>}
                   </div>
                   <div className="card">
-                    <h3>{t('network.traffic.tierTitle')}</h3>
+                    <h3>{t(traffic.mode === 'aggregate' ? 'network.traffic.tierTitleAggregate' : traffic.mode === 'inference' ? 'network.traffic.tierTitleInference' : 'network.traffic.tierTitle')}</h3>
                     {traffic.perTier.map((x) => (
                       <div key={x.tier} style={{ marginBottom: 8 }}>
                         <div className="row" style={{ fontSize: 12 }}>
                           <span style={{ width: 150 }}>{tierLabel(x.tier)}</span>
                           <span className="grow" />
-                          <span>{t('network.traffic.tierRow', { gb: fmt1(x.bytesPerStepGB), u: fmtPct(x.utilization, 1), avg: fmtPct(x.utilizationAvg, 1) })}</span>
+                          <span>{t(trafficRateMode ? 'network.traffic.tierRowInference' : 'network.traffic.tierRow', { gb: fmt1(x.bytesPerStepGB), u: fmtPct(x.utilization, 1), avg: fmtPct(x.utilizationAvg, 1) })}</span>
                           <span style={{ marginLeft: 8 }}>{Number.isFinite(x.headroom) ? <StatusLabel severity={x.headroom < 0 ? 'error' : x.headroom < 0.2 ? 'warning' : 'good'}>{x.headroom >= 10 ? t('network.traffic.headroomBig') : t('network.traffic.headroom', { x: fmt1(x.headroom) })}</StatusLabel> : <StatusLabel severity="good">{t('network.traffic.noTraffic')}</StatusLabel>}</span>
                         </div>
-                        <Meter ratio={x.utilization} label={t('network.traffic.meterLabel', { tier: tierLabel(x.tier), cap: fmtInt(x.capacityGBps ?? 0) })} />
+                        <Meter ratio={x.utilization} label={t(traffic.mode === 'aggregate' ? 'network.traffic.meterLabelAggregate' : 'network.traffic.meterLabel', { tier: tierLabel(x.tier), cap: fmtInt(x.capacityGBps ?? 0) })} />
                       </div>
                     ))}
-                    <p className="caption">{t('network.traffic.utilCaption')}</p>
+                    <p className="caption">{t(traffic.mode === 'aggregate' ? 'network.traffic.utilCaptionAggregate' : traffic.mode === 'inference' ? 'network.traffic.utilCaptionInference' : 'network.traffic.utilCaption')}</p>
                   </div>
                 </div>
               </Section>
+
+              {traffic.trafficTrace?.length ? (
+                <Section title={t('network.traffic.timelineTitle')}>
+                  <div className="card">
+                    <LineChart
+                      title={t(traffic.mode === 'aggregate' ? 'network.traffic.timelineChartAggregate' : 'network.traffic.timelineChartSingle')}
+                      series={traffic.perTier
+                        .filter((tier) => traffic.trafficTrace!.some((point) => point[TRAFFIC_TRACE_RATE_KEY[tier.tier]] > 0))
+                        .map((tier) => ({
+                          key: tier.tier,
+                          name: tierLabel(tier.tier),
+                          points: traffic.trafficTrace!.map((point) => ({ x: point.t, y: point[TRAFFIC_TRACE_RATE_KEY[tier.tier]] })),
+                        }))}
+                      xFormat={(value) => `${fmtInt(value)} s`}
+                      yFormat={(value) => `${fmt1(value)} GB/s`}
+                      yMin={0}
+                      step
+                    />
+                    <p className="caption">{t(traffic.mode === 'aggregate' ? 'network.traffic.timelineCaptionAggregate' : traffic.mode === 'inference' ? 'network.traffic.timelineCaptionInference' : 'network.traffic.timelineCaptionTraining')}</p>
+                  </div>
+                </Section>
+              ) : null}
+
+              {traffic.quality && (
+                <Section title={t('network.traffic.qualityTitle')}>
+                  <div className="card">
+                    <div className="row wrap" style={{ gap: 8 }}>
+                      <StatusLabel severity={traffic.quality.level === 'calibrated' ? 'good' : traffic.quality.level === 'mixed' ? 'warning' : 'info'}>{t(`network.traffic.quality.${traffic.quality.level}`)}</StatusLabel>
+                      <strong>{t('network.traffic.qualityCoverage', { n: traffic.quality.calibratedWorkloads, total: traffic.quality.workloadCount })}</strong>
+                    </div>
+                    <p className="hint" style={{ marginTop: 6 }}>{t('network.traffic.qualityMeaning')}</p>
+                    {traffic.quality.offeredDemandWorkloads.length > 0 && <p className="hint warn-text">{t('network.traffic.qualityDemandWarning', { n: traffic.quality.offeredDemandWorkloads.length })}</p>}
+                  </div>
+                </Section>
+              )}
 
               <Section title={t('network.l2l3.title')}>
                 <div className="card">
@@ -386,9 +485,25 @@ export function NetworkPanel() {
                 <Section title={t('network.inf.title')}>
                   <div className="grid-3">
                     <Stat label={t('network.inf.kv')} value={`${fmt1(traffic.inference.kvBytesPerToken / 1024)} KB`} delta={traffic.inference.attention.toUpperCase()} />
-                    <Stat label={t('network.inf.pd')} value={`${fmtInt(traffic.inference.kvTransferGbps)} Gb/s`} delta={t('network.inf.pdDelta')} />
+                    <Stat
+                      label={t('network.inf.pd')}
+                      value={traffic.inference.disaggregated ? `${fmtInt(traffic.inference.kvTransferGbps)} Gb/s` : '–'}
+                      delta={t(traffic.inference.disaggregated ? 'network.inf.pdDelta' : 'network.inf.pdDisabled')}
+                    />
                     <Stat label={t('network.inf.ep')} value={Number.isFinite(traffic.inference.epDecodeTokPerSPerUser) ? `${fmtInt(traffic.inference.epDecodeTokPerSPerUser)} tok/s/user` : '–'} delta={t('network.inf.epDelta')} />
                   </div>
+                  {traffic.inference.prefillParallelism && traffic.inference.decodeParallelism && (
+                    <p className="caption">
+                      {traffic.inference.disaggregated
+                        ? t('network.inf.topologyPd', {
+                          ptp: traffic.inference.prefillParallelism.tp, ppp: traffic.inference.prefillParallelism.pp, pep: traffic.inference.prefillParallelism.ep, pcp: traffic.inference.prefillParallelism.cp, pg: traffic.inference.prefillInstanceGpus ?? 0,
+                          dtp: traffic.inference.decodeParallelism.tp, dpp: traffic.inference.decodeParallelism.pp, dep: traffic.inference.decodeParallelism.ep, dcp: traffic.inference.decodeParallelism.cp, dg: traffic.inference.decodeInstanceGpus ?? 0,
+                        })
+                        : t('network.inf.topologyAggregated', {
+                          tp: traffic.inference.decodeParallelism.tp, pp: traffic.inference.decodeParallelism.pp, ep: traffic.inference.decodeParallelism.ep, cp: traffic.inference.decodeParallelism.cp, g: traffic.inference.decodeInstanceGpus ?? 0,
+                        })}
+                    </p>
+                  )}
                 </Section>
               )}
 
@@ -699,7 +814,7 @@ function OverlapSection() {
   if (!w?.training) return null;
   const ov = w.training.overlap ?? {};
   const framework: OverlapFramework = ov.framework ?? traffic?.overlapFramework ?? 'fsdp-prefetch';
-  const setOverlap = (patch: Partial<NonNullable<NonNullable<typeof w.training>['overlap']>>, clear?: Group) =>
+  const setOverlap = (patch: Partial<NonNullable<NonNullable<typeof w.training>['overlap']>>, clear?: TrainingGroup) =>
     update((d) => {
       const x = d.workloads.find((y) => y.id === w.id);
       if (!x?.training) return;
@@ -707,7 +822,7 @@ function OverlapSection() {
       if (clear) delete next[clear];
       x.training.overlap = next as NonNullable<typeof x.training.overlap>;
     });
-  const rows = GROUPS.map((g) => ({ g, o: traffic?.overlap?.[g] }));
+  const rows = TRAINING_GROUPS.map((g) => ({ g, o: traffic?.overlap?.[g] }));
   return (
     <Section title={t('network.ov.title')} actions={<button className="btn ghost sm" onClick={() => update((d) => { const x = d.workloads.find((y) => y.id === w.id); if (x?.training) x.training.overlap = undefined; })}>{t('network.ov.reset')}</button>}>
       <p className="hint">{t('network.ov.formula')}</p>

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { computeTraffic, DDC_TABLE, ETA_DEFAULT, etaFor, radixCapacity, sizeDdc, type TrafficSpec } from '../src/index.ts';
+import { AGGREGATE_TRAFFIC_ID, analyzeProject, computeInferenceTraffic, computeTraffic, createNvidiaReferenceProject, DDC_TABLE, ETA_DEFAULT, etaFor, findCatalogItem, radixCapacity, sizeDdc, type InferenceTrafficSpec, type TrafficSpec } from '../src/index.ts';
 
 /**
  * Anchors from docs/research/network-sim.md §2.4 / §7.3 and review-domain-network-sim.md. GPU specs are inline (H100 SXM:
@@ -142,15 +142,134 @@ describe('traffic.ts — MoE / EP, oversubscription and η', () => {
   });
 
   it('inference block: MLA KV bytes/token (DeepSeek-V3 70.272 KB at 2 B) and GQA (Llama 3.1 405B 516.096 KB at 2 B)', () => {
-    const mla = computeTraffic({ ...moe, inference: { params: { requestsPerSec: 10, inputTokens: 4096, outputTokens: 512, ttftSloMs: 1000, tpotSloMs: 50, disaggregated: true, kvPrecision: 'bf16' }, model: moe.model } });
+    const mla = computeTraffic({ ...moe, inference: { params: { requestsPerSec: 10, inputTokens: 4096, outputTokens: 512, ttftSloMs: 1000, tpotSloMs: 50, disaggregated: true, kvPrecision: 'bf16', prefillParallelism: { tp: 2, pp: 1, ep: 4, cp: 2 }, decodeParallelism: { tp: 4, pp: 1, ep: 8, cp: 1 } }, model: moe.model } });
     expect(mla.inference?.attention).toBe('mla');
     expect(mla.inference?.kvBytesPerToken).toBe(61 * (512 + 64) * 2);
     expect(mla.inference?.epDecodeTokPerSPerUser).toBeGreaterThan(0);
+    expect(mla.inference).toMatchObject({ disaggregated: true, prefillInstanceGpus: 16, decodeInstanceGpus: 32, prefillParallelism: { tp: 2, ep: 4, cp: 2 }, decodeParallelism: { tp: 4, ep: 8, cp: 1 } });
     const gqa = computeTraffic({ ...llama3, inference: { params: { requestsPerSec: 10, inputTokens: 4096, outputTokens: 512, ttftSloMs: 1000, tpotSloMs: 50, disaggregated: true, kvPrecision: 'bf16' }, model: llama3.model } });
     expect(gqa.inference?.attention).toBe('gqa');
     expect(gqa.inference?.kvBytesPerToken).toBe(2 * 126 * 8 * 128 * 2);
     // DistServe: R_KV = rps × prompt × KV/token → 10 × 4096 × 516,096 B = 21.1 GB/s ≈ 169 Gb/s
     expect(gqa.inference?.kvTransferGbps).toBeCloseTo((10 * 4096 * 516096 * 8) / 1e9, 6);
+    const aggregated = computeTraffic({ ...llama3, inference: { params: { requestsPerSec: 10, inputTokens: 4096, outputTokens: 512, ttftSloMs: 1000, tpotSloMs: 50, disaggregated: false, kvPrecision: 'bf16', parallelism: { tp: 8, pp: 1, ep: 1, cp: 1 } }, model: llama3.model } });
+    expect(aggregated.inference?.kvTransferGbps).toBe(0);
+    expect(aggregated.inference?.decodeInstanceGpus).toBe(8);
+    const hybrid = computeTraffic({ ...moe, inference: { params: { requestsPerSec: 10, inputTokens: 4096, outputTokens: 512, ttftSloMs: 1000, tpotSloMs: 50, disaggregated: true, kvPrecision: 'bf16' }, model: { ...moe.model, layers: 93, kvCacheLayerFraction: 24 / 93 } } });
+    expect(hybrid.inference?.kvBytesPerToken).toBe(24 * (512 + 64) * 2);
+  });
+});
+
+describe('traffic.ts — inference as a first-class Network/Cabling scenario', () => {
+  const serving: InferenceTrafficSpec = {
+    model: { name: 'MoE serving', paramsB: 671, activeParamsB: 37, layers: 61, hiddenSize: 7168, seqLen: 4096, numHeads: 128, kvHeads: 128, moe: { experts: 256, topK: 8, nodeLimit: 4 }, mla: { dLatent: 512, dRope: 64 } },
+    inference: {
+      requestsPerSec: 120,
+      inputTokens: 4096,
+      outputTokens: 512,
+      ttftSloMs: 1000,
+      tpotSloMs: 50,
+      disaggregated: true,
+      kvPrecision: 'bf16',
+      prefillParallelism: { tp: 4, pp: 1, ep: 2, cp: 2 },
+      decodeParallelism: { tp: 4, pp: 1, ep: 8, cp: 1 },
+    },
+    gpus: 384,
+    gpu: { peakFlops: 2e15, scaleUpDomain: 8, scaleUpGBpsPerDir: 200, nicGbps: 800 },
+    fabric: { kind: 'clos', tiers: 3, k: 64, oversubscription: 2, gpusPerLeafDomain: 64, gpusPerSpineDomain: 256, leaves: 48, eta: { value: 0.8, class: 'te', source: 'public-spec', citation: 'test', overridden: false }, etaA2a: 0.7 },
+  };
+
+  it('models TP/CP/EP plus P/D KV transfer as GB/s on a one-second demand window', () => {
+    const r = computeInferenceTraffic(serving);
+    expect(r).toMatchObject({ mode: 'inference', basis: 'inference-second', stepTimeS: 1 });
+    expect(r.bytesPerStepByGroup.tp).toBeGreaterThan(0);
+    expect(r.bytesPerStepByGroup.cp).toBeGreaterThan(0);
+    expect(r.bytesPerStepByGroup.ep).toBeGreaterThan(0);
+    expect(r.bytesPerStepByGroup.pd).toBeGreaterThan(0);
+    expect(r.groupTier?.pd).toMatch(/leaf/);
+    expect(r.inference).toMatchObject({ requestsPerSec: 120, allocatedGpus: 384, replicas: 8, disaggregated: true, prefillInstanceGpus: 16, decodeInstanceGpus: 32 });
+    expect(r.inference!.kvTransferGbps).toBeGreaterThan(0);
+    expect(r.perTier.find((x) => x.tier === 'leaf')!.utilization).toBeGreaterThan(0);
+  });
+
+  it('runs from an inference-only project and honours the selected Traffic workload', () => {
+    const project = structuredClone(createNvidiaReferenceProject({ pods: 1 }).project);
+    const inference = project.workloads.find((w) => w.inference)!;
+    inference.inference = { ...inference.inference!, disaggregated: true, prefillParallelism: { tp: 2, pp: 1, ep: 1, cp: 1 }, decodeParallelism: { tp: 4, pp: 1, ep: 1, cp: 1 } };
+    project.workloads = [inference];
+    project.network.trafficWorkloadId = inference.id;
+    const report = analyzeProject(project).network.traffic;
+    expect(report).toBeDefined();
+    expect(report).toMatchObject({ workloadId: inference.id, mode: 'inference', basis: 'inference-second' });
+    expect(report!.inference?.allocatedGpus).toBeGreaterThan(0);
+    expect(report!.notes.some((n) => n.includes('GPU racks placed in Layout'))).toBe(true);
+  });
+
+  it('switches between training and inference when both workloads exist', () => {
+    const project = structuredClone(createNvidiaReferenceProject({ pods: 1 }).project);
+    const inference = project.workloads.find((w) => w.inference)!;
+    const training = project.workloads.find((w) => w.training)!;
+    project.network.trafficWorkloadId = inference.id;
+    expect(analyzeProject(project).network.traffic).toMatchObject({ workloadId: inference.id, mode: 'inference' });
+    project.network.trafficWorkloadId = training.id;
+    expect(analyzeProject(project).network.traffic).toMatchObject({ workloadId: training.id, mode: 'training' });
+  });
+
+  it('keeps untraced inference demand flat over the representative 600-second window', () => {
+    const project = structuredClone(createNvidiaReferenceProject({ pods: 1 }).project);
+    const inference = project.workloads.find((w) => w.inference)!;
+    project.network.trafficWorkloadId = inference.id;
+    const report = analyzeProject(project).network.traffic!;
+    expect(report.trafficTrace).toHaveLength(600);
+    expect(new Set(report.trafficTrace!.map((point) => point.leafGBps)).size).toBe(1);
+    expect(report.quality).toMatchObject({ workloadCount: 1 });
+    if (inference.calibration?.mode !== 'inference') expect(report.quality?.offeredDemandWorkloads).toContain(inference.id);
+  });
+
+  it('aggregates concurrent workloads as facility GB/s and preserves evidence boundaries', () => {
+    const project = structuredClone(createNvidiaReferenceProject({ pods: 1 }).project);
+    project.network.trafficWorkloadId = AGGREGATE_TRAFFIC_ID;
+    const report = analyzeProject(project).network.traffic!;
+    expect(report).toMatchObject({ mode: 'aggregate', basis: 'aggregate-second', scope: 'aggregate' });
+    expect(report.workloadIds).toHaveLength(project.workloads.filter((w) => w.training || w.inference).length);
+    expect(report.allocatedGpus).toBeGreaterThan(0);
+    expect(report.trafficTrace).toHaveLength(600);
+    expect(report.bytesPerStepByGroup.tp).toBeGreaterThan(0);
+    expect(report.perTier.every((tier) => (tier.capacityGBps ?? 0) > 0)).toBe(true);
+    expect(report.notes.some((note) => /concurrent/i.test(note))).toBe(true);
+    expect(report.quality?.assumptions.some((note) => /scheduler start offsets/i.test(note))).toBe(true);
+  });
+
+  it('uses the placed UBB8 or HGX scale-up envelope instead of a vendor-neutral fixed capacity', () => {
+    const reportFor = (catalogId: string, aggregate = false) => {
+      const project = structuredClone(createNvidiaReferenceProject({ pods: 1 }).project);
+      const inference = project.workloads.find((w) => w.inference)!;
+      project.network.trafficWorkloadId = aggregate ? AGGREGATE_TRAFFIC_ID : inference.id;
+      for (const equipment of project.equipment) {
+        if (findCatalogItem(equipment.catalogId)?.category === 'gpu-rack' && typeof equipment.meta?.computeSlot !== 'string') equipment.catalogId = catalogId;
+      }
+      return analyzeProject(project).network.traffic!;
+    };
+
+    const amd = reportFor('amd-mi355x-dlc-4x');
+    const hgx = reportFor('hgx-b200-air-4x');
+    const amdScaleUp = amd.perTier.find((tier) => tier.tier === 'scale-up')!;
+    const hgxScaleUp = hgx.perTier.find((tier) => tier.tier === 'scale-up')!;
+    expect(amd.physical).toMatchObject({ platformId: 'amd-mi355x-dlc-4x', scaleUpName: 'Infinity Fabric', scaleUpDomain: 8, scaleUpEffectiveGBpsPerGpu: 430.1, scaleUpBusbwFactor: 0.8, scaleOutFabric: 'ib-xdr-800' });
+    expect(hgx.physical).toMatchObject({ platformId: 'hgx-b200-air-4x', scaleUpName: 'NVLink', scaleUpDomain: 8, scaleUpEffectiveGBpsPerGpu: 720, scaleUpBusbwFactor: 0.8, scaleOutFabric: 'ib-xdr-800' });
+    expect(amdScaleUp.bytesPerStepGB).toBeCloseTo(hgxScaleUp.bytesPerStepGB, 9);
+    expect(amdScaleUp.utilization).toBeGreaterThan(hgxScaleUp.utilization);
+    expect(amdScaleUp.capacityGBps).toBeCloseTo(430.1, 6);
+    expect(hgxScaleUp.capacityGBps).toBe(720);
+    expect(430 / amdScaleUp.capacityGBps!).toBeGreaterThan(0.99); // effectively no operating headroom
+    expect(430 / hgxScaleUp.capacityGBps!).toBeLessThan(0.6);
+
+    const aggregateAmd = reportFor('amd-mi355x-dlc-4x', true);
+    const aggregateHgx = reportFor('hgx-b200-air-4x', true);
+    expect(aggregateAmd.physical?.scaleUpName).toBe('Infinity Fabric');
+    expect(aggregateHgx.physical?.scaleUpName).toBe('NVLink');
+    expect(aggregateAmd.perTier.find((tier) => tier.tier === 'scale-up')!.capacityGBps! / aggregateAmd.allocatedGpus!).toBeCloseTo(430.1, 6);
+    expect(aggregateHgx.perTier.find((tier) => tier.tier === 'scale-up')!.capacityGBps! / aggregateHgx.allocatedGpus!).toBe(720);
   });
 });
 

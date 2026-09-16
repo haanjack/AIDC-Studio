@@ -19,6 +19,7 @@ import { polylineInside, rowGroupsFromEquipment } from '../layout/rows.ts';
 import { findLayoutTemplate } from '../layout/templates/index.ts';
 import { coolingLoopIssues, coolingLoopsFor } from '../layout/coolingPlacement.ts'; // T1: gallery CDU loop budget
 import { shareIssues } from '../workload/shares.ts'; // T6: workload-share-over
+import { inferenceMemoryEstimate, inferenceParallelismFor, inferenceReplicaGpus } from '../workload/inference.ts';
 import { standardsCheckIssues } from './standardsChecks.ts'; // stream C (P3): RK / PW / CL / NW / FC parameter checks
 
 interface Inputs {
@@ -238,7 +239,8 @@ export function validateProjectCtx(ctx: Ctx, r: Inputs): Issue[] {
     if (bp.training && (bp.model.moe?.experts ?? 1) > 1 && (bp.training.ep ?? 1) <= 1) add({ id: `workload-moe-ep1-${wl.workloadId}`, severity: 'warning', domain: 'workload', message: `${bp.name}: MoE 모델(전문가 ${bp.model.moe!.experts}개)을 EP 1로 학습합니다 — 전문가 all-to-all 바이트가 0이 되어 스텝 시간이 낙관적입니다.`, suggestion: 'EP를 전문가 수에 맞게 설정하세요 (예: DeepSeek-V3 EP64).', messageEn: `${bp.name}: MoE model (${bp.model.moe!.experts} experts) trained with EP 1 — expert all-to-all bytes are 0 and the step time is optimistic.`, suggestionEn: 'Set EP to match the expert count (e.g. DeepSeek-V3 EP64).' });
     if (bp.training && wl.gpus > 0) {
       const tr = bp.training;
-      const gpuRack = project.equipment.map((e) => findCatalogItem(e.catalogId)).find((it) => it?.category === 'gpu-rack');
+      // Match the workload engine: heterogeneous projects use the GPU-rack model carrying the most GPUs.
+      const gpuRack = ctx.gpuRack;
       const hbm = gpuRack?.compute?.gpuMemoryGB ?? 0;
       const mp = Math.max(1, (tr.tp ?? 1) * (tr.pp ?? 1) * (tr.ep ?? 1) * (tr.cp ?? 1));
       const dp = Math.max(1, Math.floor(wl.gpus / mp));
@@ -247,6 +249,33 @@ export function validateProjectCtx(ctx: Ctx, r: Inputs): Issue[] {
       // mixed-precision Adam: 2 B weights + 2 B grads + 12 B optimizer per parameter; ZeRO-1/2/3 shard optimizer / grads / weights over DP (estimate)
       const perGpuGB = (P * (2 / (z >= 3 ? dp : 1) + 2 / (z >= 2 ? dp : 1) + 12 / (z >= 1 ? dp : 1))) / ((tr.tp ?? 1) * (tr.pp ?? 1) * (tr.ep ?? 1)) / 1e9;
       if (hbm > 0 && perGpuGB > hbm) add({ id: `workload-memory-${wl.workloadId}`, severity: 'warning', domain: 'workload', message: `${bp.name}: GPU당 가중치+옵티마이저 ${perGpuGB.toFixed(0)} GB가 HBM ${hbm} GB를 넘습니다 (TP·PP·EP = ${(tr.tp ?? 1) * (tr.pp ?? 1) * (tr.ep ?? 1)}, ZeRO ${z}, 활성값 제외, 추정).`, suggestion: 'TP / PP / EP 또는 ZeRO 단계를 늘리세요.', messageEn: `${bp.name}: weights + optimizer ${perGpuGB.toFixed(0)} GB per GPU exceed the ${hbm} GB HBM (TP·PP·EP = ${(tr.tp ?? 1) * (tr.pp ?? 1) * (tr.ep ?? 1)}, ZeRO ${z}, activations excluded, estimate).`, suggestionEn: 'Raise TP / PP / EP or the ZeRO stage.' });
+    }
+    if (bp.inference) {
+      const inf = bp.inference;
+      const stages = inf.disaggregated
+        ? ([['prefill', inferenceParallelismFor(inf, 'prefill')], ['decode', inferenceParallelismFor(inf, 'decode')]] as const)
+        : ([['aggregated', inferenceParallelismFor(inf, 'aggregated')]] as const);
+      // Match the workload engine and UI: heterogeneous projects use the placed GPU-rack model carrying the most GPUs.
+      const gpuRack = ctx.gpuRack;
+      const domain = gpuRack?.compute?.scaleUp.domainSize ?? 0;
+      const hbm = gpuRack?.compute?.gpuMemoryGB ?? 0;
+      for (const [stage, p] of stages) {
+        const group = inferenceReplicaGpus(p);
+        const memory = inferenceMemoryEstimate(bp, stage, p, hbm, domain);
+        if (memory && !memory.fits) add({
+          id: `workload-inference-memory-${wl.workloadId}-${stage}`,
+          severity: 'warning',
+          domain: 'workload',
+          message: `${bp.name}: ${stage} TP${p.tp}/PP${p.pp}/EP${p.ep}/CP${p.cp}가 GPU당 ${memory.totalGBPerGpu.toFixed(1)} GB(가중치 ${memory.weightGBPerGpu.toFixed(1)} + 1개 시퀀스 KV ${memory.kvGBPerGpu.toFixed(1)})를 요구해 가용 HBM ${memory.usableHbmGB.toFixed(1)} GB를 넘습니다.`,
+          suggestion: memory.minimumTp ? `최소 TP${memory.minimumTp} 이상을 적용하거나 PP/EP/정밀도를 조정하세요.` : 'PP/EP 또는 가중치·KV 정밀도를 조정하세요.',
+          messageEn: `${bp.name}: ${stage} TP${p.tp}/PP${p.pp}/EP${p.ep}/CP${p.cp} needs ${memory.totalGBPerGpu.toFixed(1)} GB per GPU (weights ${memory.weightGBPerGpu.toFixed(1)} + one-sequence KV ${memory.kvGBPerGpu.toFixed(1)}), above ${memory.usableHbmGB.toFixed(1)} GB usable HBM.`,
+          suggestionEn: memory.minimumTp ? `Use at least TP${memory.minimumTp}, or adjust PP/EP/precision.` : 'Adjust PP/EP or weight/KV precision.',
+        });
+        if (!bp.model.moe && p.ep > 1) add({ id: `workload-inference-dense-ep-${wl.workloadId}-${stage}`, severity: 'warning', domain: 'workload', message: `${bp.name}: ${stage}가 Dense 모델에 EP ${p.ep}를 사용합니다. EP는 가중치를 나누지 않아 ${group} GPU 인스턴스의 자원만 증가합니다.`, suggestion: 'EP를 1로 두고 TP/PP로 모델을 샤딩하세요.', messageEn: `${bp.name}: ${stage} uses EP ${p.ep} for a dense model. EP does not shard its weights and only increases the ${group}-GPU instance.`, suggestionEn: 'Set EP to 1 and use TP/PP for model sharding.' });
+        if (bp.model.moe && p.ep > bp.model.moe.experts) add({ id: `workload-inference-ep-experts-${wl.workloadId}-${stage}`, severity: 'warning', domain: 'workload', message: `${bp.name}: ${stage} EP ${p.ep}가 라우팅 전문가 ${bp.model.moe.experts}개보다 큽니다.`, suggestion: 'EP를 전문가 수 이하로 조정하세요.', messageEn: `${bp.name}: ${stage} EP ${p.ep} exceeds the ${bp.model.moe.experts} routed experts.`, suggestionEn: 'Set EP no higher than the expert count.' });
+        if (bp.model.moe && bp.model.moe.experts % p.ep !== 0) add({ id: `workload-inference-ep-div-${wl.workloadId}-${stage}`, severity: 'info', domain: 'workload', message: `${bp.name}: 전문가 ${bp.model.moe.experts}개가 ${stage} EP ${p.ep}에 균등 분할되지 않습니다.`, suggestion: '프레임워크가 불균등 전문가 배치를 지원하는지 확인하거나 EP를 약수로 정하세요.', messageEn: `${bp.name}: ${bp.model.moe.experts} experts do not divide evenly across ${stage} EP ${p.ep}.`, suggestionEn: 'Verify uneven expert placement support or choose an EP divisor.' });
+        if (domain > 0 && p.tp * p.ep > domain) add({ id: `workload-inference-scaleout-${wl.workloadId}-${stage}`, severity: 'warning', domain: 'network', message: `${bp.name}: ${stage} TP×EP ${p.tp * p.ep}가 scale-up 도메인 ${domain} GPU를 넘어 all-reduce/all-to-all 일부가 scale-out으로 흐릅니다.`, suggestion: 'TP×EP를 scale-up 도메인 안에 두거나 scale-out 대역폭과 지연을 검증하세요.', messageEn: `${bp.name}: ${stage} TP×EP ${p.tp * p.ep} exceeds the ${domain}-GPU scale-up domain, so some all-reduce/all-to-all traffic uses scale-out.`, suggestionEn: 'Keep TP×EP inside the scale-up domain or validate scale-out bandwidth and latency.' });
+      }
     }
     if (wl.gpus === 0) add({ id: `workload-empty-${wl.workloadId}`, severity: 'warning', domain: 'workload', message: `${bp.name}: ${wl.notes[0] ?? '시뮬레이션 불가'}`, messageEn: `${bp.name}: ${wl.notesEn?.[0] ?? wl.notes[0] ?? 'simulation not possible'}` });
     if (wl.gpusRequired !== undefined && wl.gpusRequired > wl.gpus) add({ id: `workload-capacity-${wl.workloadId}`, severity: 'warning', domain: 'workload', message: `${bp.name}: 목표 처리량에 GPU ${wl.gpusRequired}개가 필요하나 ${wl.gpus}개만 할당되었습니다.`, messageEn: `${bp.name}: the target throughput needs ${wl.gpusRequired} GPUs but only ${wl.gpus} are allocated.` });

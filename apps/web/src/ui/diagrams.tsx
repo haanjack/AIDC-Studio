@@ -173,13 +173,25 @@ export function TrafficBottleneckMap({ traffic, workloadName }: { traffic: Traff
   const active = tiers.filter((tier) => tier.bytesPerStepGB > 0 && tier.utilization > 0);
   const bottleneck = active.reduce<TrafficTier | undefined>((worst, tier) => (!worst || tier.utilization > worst.utilization ? tier : worst), undefined);
   const state = bottleneck ? trafficState(bottleneck) : 'idle';
-  const tierName = bottleneck ? tr(`network.tier.${bottleneck.tier}`) : '';
+  const fullTierLabel = (tier: TrafficTier['tier']) => tier === 'scale-up' && traffic.physical?.scaleUpName
+    ? tr('network.tier.scale-upNamed', { name: traffic.physical.scaleUpName })
+    : tr(`network.tier.${tier}`);
+  const nodeTierLabel = (tier: TrafficTier['tier']) => tier === 'scale-up' && traffic.physical?.scaleUpName
+    ? traffic.physical.scaleUpName
+    : tr(`network.traffic.pathTier.${tier}`);
+  const tierName = bottleneck ? fullTierLabel(bottleneck.tier) : '';
+  const rateMode = traffic.mode === 'inference' || traffic.mode === 'aggregate';
+  const aggregateMode = traffic.mode === 'aggregate';
+  const scaleUpName = traffic.physical?.scaleUpName ?? tr('network.tier.scale-up');
+  const scaleOutName = traffic.physical?.scaleOutFabric
+    ? tr(`network.fabricName.${traffic.physical.scaleOutFabric}`)
+    : tr('network.traffic.pathScaleOutUnknown');
   const summary = !bottleneck
     ? tr('network.traffic.pathIdle')
     : state === 'error'
-      ? tr('network.traffic.pathOver', { tier: tierName, util: trafficPct(bottleneck.utilization) })
+      ? tr(rateMode ? 'network.traffic.pathOverInference' : 'network.traffic.pathOver', { tier: tierName, util: trafficPct(bottleneck.utilization) })
       : state === 'warning'
-        ? tr('network.traffic.pathTight', { tier: tierName, util: trafficPct(bottleneck.utilization), headroom: trafficPct(Math.max(0, bottleneck.headroom)) })
+        ? tr(rateMode ? 'network.traffic.pathTightInference' : 'network.traffic.pathTight', { tier: tierName, util: trafficPct(bottleneck.utilization), headroom: trafficPct(Math.max(0, bottleneck.headroom)) })
         : tr('network.traffic.pathHealthy', { tier: tierName, util: trafficPct(bottleneck.utilization), headroom: trafficPct(Math.max(0, bottleneck.headroom)) });
 
   const nodeH = 116;
@@ -192,13 +204,16 @@ export function TrafficBottleneckMap({ traffic, workloadName }: { traffic: Traff
   const svgWidth = Math.max(width, minWidth);
   const span = tiers.length * nodeW + Math.max(0, tiers.length - 1) * gap;
   const startX = Math.max(16, (svgWidth - span) / 2);
-  const nodeY = 34;
+  const nodeY = 52;
   const midY = nodeY + nodeH / 2;
   const groupBytes = traffic.bytesPerStepByGroup;
-  const groups = (['tp', 'cp', 'pp', 'dp', 'ep'] as const).filter((group) => groupBytes[group] > 0);
+  const groups = (['tp', 'cp', 'pp', 'dp', 'ep', 'pd'] as const).filter((group) => (groupBytes[group] ?? 0) > 0);
+  const bytesKey = aggregateMode ? 'network.traffic.pathBytesAggregate' : rateMode ? 'network.traffic.pathBytesInference' : 'network.traffic.pathBytes';
+  const capacityKey = aggregateMode ? 'network.traffic.pathCapacityAggregate' : 'network.traffic.pathCapacity';
+  const capacityShortKey = aggregateMode ? 'network.traffic.pathCapacityShortAggregate' : 'network.traffic.pathCapacityShort';
   const routeLabel = (route: string) => route === '-'
     ? '—'
-    : route.split('+').map((tier) => tr(`network.tier.${tier}`)).join(' → ');
+    : route.split('+').map((tier) => fullTierLabel(tier as TrafficTier['tier'])).join(' → ');
 
   return (
     <div data-traffic-bottleneck data-bottleneck-tier={bottleneck?.tier ?? 'none'} data-bottleneck-state={state}>
@@ -208,9 +223,18 @@ export function TrafficBottleneckMap({ traffic, workloadName }: { traffic: Traff
         <span className="hint"><strong>{tr('network.traffic.pathWorkload')}:</strong> {workloadName}</span>
       </div>
       <div ref={ref} style={{ overflowX: 'auto' }}>
-        <svg width={svgWidth} height={166} role="img" aria-label={tr('network.traffic.pathAria', { workload: workloadName, summary })}>
+        <svg width={svgWidth} height={184} role="img" aria-label={tr('network.traffic.pathAria', { workload: workloadName, summary })}>
+          <text x={startX} y={13} style={{ fill: 'var(--text-secondary)', fontSize: 10.5, fontWeight: 700 }}>{tr('network.traffic.pathScaleUpHeader', { fabric: scaleUpName })}</text>
+          {tiers.length > 1 && (
+            <>
+              <line x1={startX + nodeW + gap / 2} x2={startX + nodeW + gap / 2} y1={4} y2={nodeY + nodeH} style={{ stroke: 'var(--border)', strokeWidth: 1, strokeDasharray: '4 4' }} />
+              <text x={startX + nodeW + gap} y={13} style={{ fill: 'var(--text-secondary)', fontSize: 10.5, fontWeight: 700 }}>{tr('network.traffic.pathScaleOutHeader', { fabric: scaleOutName })}</text>
+            </>
+          )}
           {tiers.slice(0, -1).map((tier, i) => {
             const next = tiers[i + 1];
+            // Scale-up and scale-out are distinct fabrics, not consecutive hops of one packet path.
+            if (tier.tier === 'scale-up') return null;
             const x1 = startX + i * (nodeW + gap) + nodeW;
             const x2 = startX + (i + 1) * (nodeW + gap);
             const nextState = trafficState(next);
@@ -244,17 +268,18 @@ export function TrafficBottleneckMap({ traffic, workloadName }: { traffic: Traff
                 <rect width={nodeW} height={nodeH} rx={7} style={{ fill: 'var(--surface-2)', stroke: color, strokeWidth: selected ? 2.5 : 1.25 }} />
                 <rect x={1} y={nodeH - 7} width={nodeW - 2} height={6} rx={3} style={{ fill: 'var(--surface-3)' }} />
                 <rect x={1} y={nodeH - 7} width={barW} height={6} rx={3} style={{ fill: color }} />
-                <text x={9} y={19} style={{ fill: 'var(--text-secondary)', fontSize: compactNode ? 9.5 : 11, fontWeight: 600 }}>{tr(`network.traffic.pathTier.${tier.tier}`)}</text>
+                <text x={9} y={19} style={{ fill: 'var(--text-secondary)', fontSize: compactNode ? 9.5 : 11, fontWeight: 600 }}>{nodeTierLabel(tier.tier)}</text>
                 <text x={9} y={48} style={{ fill: color, fontSize: compactNode ? 19 : 22, fontWeight: 700 }}>{trafficPct(tier.utilization)}</text>
-                <text x={9} y={65} style={{ fill: 'var(--text-muted)', fontSize: compactNode ? 9 : 10.5 }}>{tr('network.traffic.pathBurst')} · {tr('network.traffic.pathAverage')} {trafficPct(avg)}</text>
-                <text x={9} y={84} style={{ fill: 'var(--text-secondary)', fontSize: compactNode ? 9 : 10.5 }}>{tr('network.traffic.pathBytes', { value: tier.bytesPerStepGB.toFixed(1) })}</text>
-                <text x={9} y={100} style={{ fill: 'var(--text-secondary)', fontSize: compactNode ? 9 : 10.5 }}>{tr('network.traffic.pathCapacityShort', { value: Math.round(tier.capacityGBps ?? 0).toLocaleString() })}</text>
-                <title>{`${tr(`network.tier.${tier.tier}`)}\n${tr('network.traffic.pathBurst')}: ${trafficPct(tier.utilization)}\n${tr('network.traffic.pathAverage')}: ${trafficPct(avg)}\n${tr('network.traffic.pathBytes', { value: tier.bytesPerStepGB.toFixed(2) })}\n${tr('network.traffic.pathCapacity', { value: (tier.capacityGBps ?? 0).toFixed(1) })}`}</title>
+                <text x={9} y={65} style={{ fill: 'var(--text-muted)', fontSize: compactNode ? 9 : 10.5 }}>{tierState === 'idle' ? tr('network.traffic.pathNotTraversed') : <>{tr(rateMode ? 'network.traffic.pathSteady' : 'network.traffic.pathBurst')} · {tr('network.traffic.pathAverage')} {trafficPct(avg)}</>}</text>
+                <text x={9} y={84} style={{ fill: 'var(--text-secondary)', fontSize: compactNode ? 9 : 10.5 }}>{tr(bytesKey, { value: tier.bytesPerStepGB.toFixed(1) })}</text>
+                <text x={9} y={100} style={{ fill: 'var(--text-secondary)', fontSize: compactNode ? 9 : 10.5 }}>{tr(capacityShortKey, { value: Math.round(tier.capacityGBps ?? 0).toLocaleString() })}</text>
+                <title>{`${fullTierLabel(tier.tier)}\n${tr(rateMode ? 'network.traffic.pathSteady' : 'network.traffic.pathBurst')}: ${trafficPct(tier.utilization)}\n${tr('network.traffic.pathAverage')}: ${trafficPct(avg)}\n${tr(bytesKey, { value: tier.bytesPerStepGB.toFixed(2) })}\n${tr(capacityKey, { value: (tier.capacityGBps ?? 0).toFixed(1) })}`}</title>
               </g>
             );
           })}
         </svg>
       </div>
+      <p className="caption" style={{ margin: '0 0 4px' }}>{tr('network.traffic.pathFabricSeparation')}</p>
       {groups.length > 0 && (
         <div className="row wrap" style={{ gap: 6, marginTop: 2 }} aria-label={tr('network.traffic.pathCollectives')}>
           <span className="hint">{tr('network.traffic.pathCollectives')}:</span>
