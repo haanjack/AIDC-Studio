@@ -1,60 +1,114 @@
-# Standalone distribution — recommendation (DECISIONS-v2 #13)
+# Standalone Distribution
 
-Status: research recommendation, not yet built. Source: `docs/research/r2-platform.md` §6 (measured on this host, 2026-09-15). Labels: `official-config` = Node/vendor docs, `derived (host-measured)` = measured here, `estimate` = not measured.
+## Status
 
-## 1. What "standalone" has to deliver
+Standalone packaging is designed but is not yet part of the release build. The supported deployment today is the Fastify server plus the Vite-built web application, run directly with Node.js or through Docker.
 
-AIDC Studio today is a Fastify server (`apps/server`) plus a Vite-built React app (`apps/web/dist`). The server provides the project store, version history, advisory locks, zip exports, the thermal job runner and the LLM proxy. A standalone build must keep all of these, run without a Node/npm toolchain on the target machine, and keep one stable browser origin so `localStorage` (UI language, display name, offline project copy) survives restarts.
+This document defines the target behaviour and recommended packaging architecture for a desktop-like distribution that does not require users to install Node.js or npm.
 
-## 2. Host facts (measured)
+## Required behaviour
 
-| Fact | Value | Label |
-|---|---|---|
-| Node on this host | v24.20.0 (LTS "Krypton"), linux x64, npm 11.19.0, ICU 78.3 | derived (host-measured) |
-| `node --build-sea` | "bad option" on v24; added in **v25.5.0** | official-config |
-| SEA on Node 24 | Stability 1.1; **CommonJS entry only** (`mainFormat: "module"` wrote a blob but the binary failed to load the ES module) | official-config + derived (host-measured) |
-| `node:sea` API | `isSea`, `getAsset`, `getRawAsset`, `getAssetAsBlob`, `getAssetKeys` (≥ 24.8) | official-config |
-| Supported SEA targets | Windows, macOS **arm64 only**, Linux (not Alpine, not s390x) | official-config |
-| Proof of concept | Fastify 5 + 2 embedded assets, esbuild → CJS 1,427,801 B, blob 1,525,949 B, postject into node → **128,060,608 B** executable; `/api/health` → `{"ok":true,"sea":true}`, `/` served embedded `index.html` | derived (host-measured) |
-| Real server bundle | `apps/server/src/main.ts` bundles as ESM without errors: 2,760,576 B from 455 inputs | derived (host-measured) |
-| Asset volume | `apps/web/dist` 24 M, `apps/web/public/assets` 21 M; no external asset pack is needed (the product ships only its own generated models and a CC0 sky map since 2026-09-15) | derived (host-measured) |
+A standalone build must preserve the complete server-backed application:
 
-## 3. Options
+- project storage and project administration;
+- automatic and named version history;
+- advisory edit locks and optimistic save conflicts;
+- server-side export ZIPs and document generation;
+- server-side thermal jobs where enabled;
+- optional local-LLM proxy and server-side API-key storage;
+- all generic public assets and exporter templates;
+- a stable browser origin so browser settings and offline recovery remain available across restarts.
 
-| Option | Verdict | Why |
-|---|---|---|
-| **Node SEA single binary** (bundled Fastify + embedded `dist` + public assets; opens the default browser at `http://127.0.0.1:<port>`) | **Recommended** | One file per OS/arch (~130 MB binary + ~45 MB assets, estimate). Same code path as the server deployment, so projects, versions, locks, exports and the LLM proxy all work. Only esbuild + postject are needed. |
-| Pure static build (`dist` zip) | Secondary artefact | Tiny, but `file://` does not work: Vite emits module scripts and ES-module workers, and MDN documents the CORS failure. It still needs an HTTP server and loses every server feature. `localStorage` is per origin including port. |
-| Electron 44.3.0 | Only on a concrete desktop requirement | 122,830,582 B runtime download before app code (measured). Consistent Chromium GPU stack, but a security-hardening and installer burden. |
-| Tauri 2 | Not recommended | Linux uses webkit2gtk, so WebGL behaviour varies per OS (estimate). It would still need the Node server as a sidecar binary, i.e. the SEA build anyway. |
+Opening `index.html` through `file://` is not sufficient because the application uses module scripts, workers, API endpoints, and origin-scoped browser storage.
 
-## 4. Build plan (SEA, Node 24)
+## Recommended package shape
 
-1. **Entry refactor** (no behaviour change for the server deployment):
-   - wrap the top-level `await` in `apps/server/src/main.ts` in `async function main()`, because esbuild rejects top-level await in CJS output;
-   - `paths.ts`: when `require('node:sea').isSea()` is true, put data in the user profile (`$XDG_DATA_HOME/aidc-studio`, `%APPDATA%\AIDC Studio`, `~/Library/Application Support/AIDC Studio`) and read everything else from SEA assets.
-2. **Static files**: replace `@fastify/static` with an asset route over `sea.getRawAsset(key)` plus a content-type map (as in the PoC). Alternative: extract the assets to a versioned cache directory on first start and keep `@fastify/static`.
-3. **Thermal worker**: `new Worker(new URL('./thermal-worker.ts', import.meta.url))` and the dynamic import of `packages/thermal` do not survive bundling. Embed a pre-bundled worker as an asset and start it with `new Worker(code, { eval: true })`, or drop server-side thermal in standalone (the browser already runs `thermal.worker.ts`).
-4. **Exports**: `export-zip.ts` reads `engines/` templates and `public/assets/models/*.glb` from disk; embed them as assets.
-5. **Bundle**: `esbuild apps/server/src/main.ts --bundle --platform=node --format=cjs --outfile=build/sea/server.cjs`.
-6. **Blob**: `sea-config.json` = `{ "main": "build/sea/server.cjs", "output": "build/sea/blob", "useCodeCache": true, "disableExperimentalSEAWarning": true, "assets": { "dist/…": "…" } }` → `node --experimental-sea-config sea-config.json`.
-7. **Inject**: copy the `node` binary, then `npx postject aidc-studio NODE_SEA_BLOB build/sea/blob --sentinel-fuse NODE_SEA_FUSE_fce680ab2cc467b6e072b8b5df1996b2`. The harmless warning "Can't find string offset for section name '.note.100'" was seen. macOS adds `--macho-segment-name NODE_SEA` and re-signing; Windows needs signtool.
-8. **Run**: fixed default port (`PORT`, default 8787) so the browser origin and its `localStorage` stay stable; `HOST=127.0.0.1` by default; open the browser unless `--no-open`.
-9. **Targets**: linux-x64, win-x64, macOS-arm64. Build per target on that OS (or a CI matrix).
+The preferred distribution is one signed launcher per supported operating system and architecture. The launcher contains or accompanies:
 
-When the project moves to a Node release with `--build-sea` (v25.5.0+) and `useVfs` is released (Stability 1.0, `added: REPLACEME` on the main-branch docs), switch steps 6–7 to `node --build-sea` and consider keeping `@fastify/static` over the virtual file system.
+1. the bundled Fastify server;
+2. the built web application;
+3. the public generic models and credits;
+4. engine/export templates;
+5. a writable per-user data directory;
+6. a small bootstrap that starts the loopback server and opens the default browser.
 
-## 5. Configuration in standalone mode
+A Node.js Single Executable Application (SEA) is the preferred implementation when the selected Node.js release supports the required module format, worker loading, embedded assets, and target platform. A packaged Node runtime plus bundled application directory is the fallback. Electron or Tauri should be introduced only for a concrete native-window, kiosk, file-association, or GPU-compatibility requirement.
 
-| Setting | How |
+## Runtime layout
+
+```text
+standalone launcher
+├── server bundle
+├── web application assets
+├── generic GLB/USD assets and credits
+├── export templates
+└── bootstrap
+    ├── resolves the user data directory
+    ├── binds to 127.0.0.1 by default
+    ├── chooses or validates the configured port
+    ├── starts the HTTP server
+    └── opens the default browser unless disabled
+```
+
+## Data directories
+
+Default writable locations should follow operating-system conventions:
+
+| Platform | Default location |
 |---|---|
-| Data directory | user profile (above); override with `AIDC_DATA_DIR` |
-| LLM endpoint | env `LLM_BASE_URL` / `LLM_MODEL` / `LLM_API_KEY`, or the assistant settings panel (stored in `<data>/settings/llm.json`, key server-side only) |
-| LAN sharing | bind `HOST=0.0.0.0` and set `AIDC_SHARED_SECRET`; there are no accounts |
-| Third-party asset packs | none required (removed 2026-09-15; see NOTICE) |
+| Linux | `$XDG_DATA_HOME/aidc-studio`, or `~/.local/share/aidc-studio` |
+| Windows | `%APPDATA%\AIDC Studio` |
+| macOS | `~/Library/Application Support/AIDC Studio` |
 
-## 6. Open questions (consultant)
+`AIDC_DATA_DIR` should override the default. Application binaries and embedded assets must remain read-only; projects, versions, settings, logs, and generated outputs belong in the writable data directory.
 
-- OS/arch set and code-signing certificates (Windows Authenticode, Apple Developer ID).
-- Whether server-side thermal is needed in standalone (the browser worker covers interactive runs).
-- Whether an Electron shell is wanted for file associations or kiosk use.
+## Build design
+
+1. Build the web application with the existing Vite configuration.
+2. Bundle the server entry and dependencies for the selected Node.js runtime.
+3. Bundle the thermal worker separately; do not rely on source-file URLs after packaging.
+4. Collect the web build, generic public assets, engine templates, notices, and credits through an explicit allowlist.
+5. Embed those files in the executable or place them in a signed, versioned resource directory.
+6. Implement a read-only asset provider for static web and export files.
+7. Resolve all writable paths from the per-user data root.
+8. Bind to loopback by default and retain a stable configured origin.
+9. Produce platform-specific signed artifacts in CI.
+10. Run application, export, persistence, worker, licence-notice, and publication-boundary smoke tests against the packaged result.
+
+## Known packaging constraints
+
+- Server code and dependencies must use a module format supported by the chosen SEA or bundler path.
+- Worker entry points and dynamic imports must be pre-bundled or loaded from extracted resources.
+- Exporters currently read some templates and model files from disk; a standalone build must route those reads through embedded resources or a versioned extraction cache.
+- Native code signing and notarisation differ by platform and cannot be treated as a post-release detail.
+- Browser storage is origin-scoped. Randomising the port on every launch can make local settings appear lost.
+- Server-side thermal is optional for interactive use because the browser worker already supports CFD-lite, but package parity should be an explicit release decision.
+
+## Configuration
+
+| Setting | Behaviour |
+|---|---|
+| Host | `127.0.0.1` by default; use an explicit LAN bind only when sharing is intended |
+| Port | Stable configured port, default `8787`; allow an override through `PORT` |
+| Data directory | OS-specific user profile; override through `AIDC_DATA_DIR` |
+| LLM endpoint | `LLM_BASE_URL`, `LLM_MODEL`, and `LLM_API_KEY`, or the in-app server settings |
+| LAN protection | Require `AIDC_SHARED_SECRET` when exposed beyond loopback |
+| Browser launch | Enabled by default; provide a `--no-open` option |
+
+## Release targets
+
+Initial targets should be selected according to actual users and signing availability. A practical starting set is Linux x64, Windows x64, and macOS arm64. Each target should be built and tested on its native CI runner unless the packaging tool explicitly guarantees cross-target output.
+
+## Release acceptance criteria
+
+A standalone artifact is ready only when it can:
+
+- start without a system Node.js/npm installation;
+- retain projects and settings across upgrades;
+- create, save, version, compare, restore, and export a project;
+- run browser CFD-lite and the selected server thermal path;
+- generate documents, drawings, and deployment ZIPs;
+- serve every public asset with the correct content type;
+- pass the licence-notice and publication-boundary checks;
+- bind only to loopback by default;
+- uninstall without deleting user project data unless explicitly requested.
