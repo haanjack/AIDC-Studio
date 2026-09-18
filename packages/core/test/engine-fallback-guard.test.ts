@@ -31,8 +31,8 @@ const ALLOW: Record<string, { ids: string[]; reason: string }> = {
     reason: 'published rack power-shelf arrangement of one vendor rack (data table; generic racks declare shelves through item data)',
   },
   'packages/core/src/layout/templates/index.ts': {
-    ids: ['nvidia-gb300-nvl72', 'nvidia-vr-nvl72'],
-    reason: 'template registry data: vendor-shape templates register their platforms (DECISIONS-v2-2 §E2); generic std-* templates are checked below',
+    ids: ['nvidia-gb300-nvl72', 'nvidia-vr-nvl72', 'amd-helios-mi455x'],
+    reason: 'template registry data: vendor-shape templates register their platforms (DECISIONS-v2-2 §E2), listed side by side for every vendor so no one of them is routed differently; generic std-* templates are checked below',
   },
 };
 

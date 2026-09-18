@@ -110,7 +110,7 @@ describe('compat: legacy ids', () => {
   });
 
   it('every current template id resolves unchanged', () => {
-    for (const id of ['std-orv3-hpr-liquid-du', 'std-orv3-hpr-rackscale-du', 'std-orw-liquid-sidecar-du', 'std-eia-air-du', 'std-eia-liquid-uqd-du', 'rack-scale-liquid-du', 'nvidia-facilities-su', 'rcu-row', 'custom']) expect(findLayoutTemplate(id)?.id, id).toBe(id);
+    for (const id of ['std-orv3-hpr-liquid-du', 'std-orv3-hpr-rackscale-du', 'std-orw-liquid-sidecar-du', 'std-eia-air-du', 'std-eia-liquid-uqd-du', 'rack-scale-liquid-du', 'wide-rackscale-liquid-du', 'nvidia-facilities-su', 'rcu-row', 'custom']) expect(findLayoutTemplate(id)?.id, id).toBe(id);
   });
 
   it('catalog aliases redirect only when the exact id is gone; vendor ids stay vendor instances', () => {

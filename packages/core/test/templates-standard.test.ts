@@ -42,7 +42,7 @@ describe('standard templates: registry', () => {
     expect(LAYOUT_TEMPLATES.slice(0, STANDARD_IDS.length).map((t) => t.id)).toEqual(STANDARD_IDS);
     expect(DEFAULT_TEMPLATE_ID).toBe('std-orv3-hpr-liquid-du');
     expect(templatesByGroup('standard').map((t) => t.id)).toEqual(STANDARD_IDS);
-    expect(templatesByGroup('vendor-sample').map((t) => t.id)).toEqual(['rack-scale-liquid-du', 'nvidia-facilities-su', 'rcu-row']);
+    expect(templatesByGroup('vendor-sample').map((t) => t.id)).toEqual(['rack-scale-liquid-du', 'wide-rackscale-liquid-du', 'nvidia-facilities-su', 'rcu-row']);
     expect(templatesByGroup('custom').map((t) => t.id)).toEqual(['custom']);
   });
 
@@ -72,7 +72,7 @@ describe('standard templates: registry', () => {
     expect(nvidia.referenceUnit).toMatchObject({ computeRacksPerUnit: 16 });
     expect(nvidia.referenceUnit?.platformIds).toContain('nvidia-vr-nvl72');
     expect(nvidia.defaults.servicesZone).toBe('support-hac');
-    for (const id of ['rack-scale-liquid-du', 'nvidia-facilities-su', 'rcu-row', 'custom']) expect(standardTemplateOf(id), id).toBeUndefined();
+    for (const id of ['rack-scale-liquid-du', 'wide-rackscale-liquid-du', 'nvidia-facilities-su', 'rcu-row', 'custom']) expect(standardTemplateOf(id), id).toBeUndefined();
   });
 
   it('DU pitch follows rack depth and the facility aisle minimums (no fixed 24 ft pitch on standard pods)', () => {

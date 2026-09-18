@@ -56,7 +56,18 @@ describe('template compute slots (§E2 / §E3)', () => {
   });
 
   it('template groups separate physical interfaces from platform instances and keep optional accelerator slots explicit', () => {
-    for (const t of LAYOUT_TEMPLATES.filter((x) => x.group === 'vendor-sample')) for (const id of t.computeSlots[0].platforms) expect(getCatalogItem(id).vendor, `${t.id} → ${id}`).toBe('NVIDIA');
+    // vendor samples carry vendor instances (never a generic class), and the group as a whole is not single-vendor:
+    // a template may legitimately list one vendor when the rack form admits only that vendor's systems.
+    const sampleVendors = new Set<string>();
+    for (const t of LAYOUT_TEMPLATES.filter((x) => x.group === 'vendor-sample')) {
+      for (const id of t.computeSlots[0].platforms) {
+        const v = getCatalogItem(id).vendor;
+        expect(v, `${t.id} → ${id}`).not.toBe('Generic');
+        sampleVendors.add(v.split(' / ')[0]);
+      }
+    }
+    expect([...sampleVendors].sort(), 'vendor samples must cover more than one vendor').toContain('AMD');
+    expect(sampleVendors.size, 'vendor samples must not be single-vendor').toBeGreaterThan(1);
     const air = LAYOUT_TEMPLATES.find((x) => x.id === 'std-eia-air-du')!;
     for (const id of ['hgx-b200-air-4x', 'hgx-b300-air-4x', 'hgx-h100-air-4x', 'hgx-h200-air-4x', 'amd-mi300x-air-4x']) expect(air.computeSlots[0].platforms).toContain(id);
     expect(LAYOUT_TEMPLATES.find((x) => x.id === 'std-eia-liquid-uqd-du')!.computeSlots[0].platforms).toContain('amd-mi355x-dlc-4x');

@@ -29,7 +29,7 @@ function generate(templateId: string, pods = 2, extra: Partial<HallLayoutOptions
 
 describe('layout templates', () => {
   it('registers the template set with the standard 21-inch OU liquid pod as the default (stream D / P4)', () => {
-    expect(LAYOUT_TEMPLATES.map((t) => t.id)).toEqual(['std-orv3-hpr-liquid-du', 'std-orv3-hpr-rackscale-du', 'std-orw-liquid-sidecar-du', 'std-eia-air-du', 'std-eia-liquid-uqd-du', 'rack-scale-liquid-du', 'nvidia-facilities-su', 'rcu-row', 'custom']);
+    expect(LAYOUT_TEMPLATES.map((t) => t.id)).toEqual(['std-orv3-hpr-liquid-du', 'std-orv3-hpr-rackscale-du', 'std-orw-liquid-sidecar-du', 'std-eia-air-du', 'std-eia-liquid-uqd-du', 'rack-scale-liquid-du', 'wide-rackscale-liquid-du', 'nvidia-facilities-su', 'rcu-row', 'custom']);
     expect(LAYOUT_TEMPLATES[0].pod.racksPerRow).toBe(12);
     for (const t of LAYOUT_TEMPLATES) expect(['public-spec', 'estimate', 'user']).toContain(t.source);
   });

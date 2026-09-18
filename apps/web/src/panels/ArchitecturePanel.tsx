@@ -3,7 +3,9 @@ import {
   DEFAULT_TEMPLATE_ID,
   LAYOUT_TEMPLATES,
   catalogItems,
+  comparePlatformsForDisplay,
   findCatalogItem,
+  platformSummary,
   platformEligibility,
   podSizing,
   registerPlatformInProject,
@@ -30,19 +32,6 @@ type ScaleOutTopology = Project['network']['scaleOut']['topology'];
 const SETUP_TEMPLATES = LAYOUT_TEMPLATES;
 const STANDARD_TEMPLATES = SETUP_TEMPLATES.filter((x) => x.group === 'standard');
 
-function platformFamily(item: CatalogItem): 'nvidia' | 'amd' | 'npu' | 'generic' {
-  const s = `${item.vendor} ${item.compute?.accelerator?.vendor ?? ''} ${item.compute?.accelerator?.family ?? ''}`.toLowerCase();
-  if (s.includes('nvidia')) return 'nvidia';
-  if (s.includes('amd')) return 'amd';
-  if (/intel|habana|gaudi|cerebras|groq|sambanova|npu|lpu/.test(s)) return 'npu';
-  return 'generic';
-}
-
-function platformFamilyById(id: string): ReturnType<typeof platformFamily> {
-  const item = findCatalogItem(id);
-  return item ? platformFamily(item) : 'generic';
-}
-
 function currentSetup(project: Project, hallId: string) {
   const hall = project.halls.find((x) => x.id === hallId) ?? project.halls[0];
   const resolved = resolveLayoutTemplate(hall?.layoutPolicy?.templateId ?? DEFAULT_TEMPLATE_ID, { project });
@@ -68,6 +57,7 @@ function preferredTemplate(platformId: string, currentId?: string): string {
 
 export function ArchitecturePanel() {
   const t = useT();
+  const locale = useApp((s) => s.uiLocale);
   const project = useApp((s) => s.project);
   const hallId = useApp((s) => s.hallId);
   const update = useApp((s) => s.update);
@@ -120,10 +110,11 @@ export function ArchitecturePanel() {
   const platforms = useMemo(
     () => catalogItems()
       .filter((x) => x.category === 'gpu-rack' && x.meta?.placeable !== false)
-      .sort((a, b) => ['nvidia', 'amd', 'npu', 'generic'].indexOf(platformFamily(a)) - ['nvidia', 'amd', 'npu', 'generic'].indexOf(platformFamily(b)) || a.name.localeCompare(b.name)),
+      .sort(comparePlatformsForDisplay),
     [libraryVersion],
   );
   const platform = findCatalogItem(platformId);
+  const psum = platform ? platformSummary(platform, locale) : null;
   const compatible = SETUP_TEMPLATES.filter((x) => templateCompatible(x, platformId));
   const template = resolveLayoutTemplate(templateId, { project });
   const eligibility = template ? platformEligibility(template.id, 'primary', platformId) : undefined;
@@ -170,13 +161,21 @@ export function ArchitecturePanel() {
               <SelectField
                 label={t('architecture.field.platform')}
                 value={platformId}
-                options={platforms.map((x) => ({ value: x.id, label: `${t(`architecture.family.${platformFamily(x)}`)} · ${x.name}` }))}
+                options={platforms.map((x) => ({ value: x.id, label: x.name }))}
                 onChange={choosePlatform}
                 hint={t('architecture.field.platformHint')}
               />
               {platform && (
                 <div className="small" style={{ padding: '7px 9px', background: 'var(--surface-2)', borderRadius: 6, marginBottom: 8 }}>
                   <div className="row wrap"><strong>{platform.vendor} · {platform.model}</strong><SourceBadge source={platform.source} /></div>
+                  {psum && <div>{psum.plain}</div>}
+                  {psum && (
+                    <div className="muted">
+                      {t('architecture.summary.class', { class: psum.className })}
+                      {psum.classId ? ` · ${t('architecture.summary.implements', { classId: psum.classId })}` : ''}
+                    </div>
+                  )}
+                  {psum && psum.specs.length > 0 && <div className="muted">{t('architecture.summary.specs', { specs: psum.specs.join(', ') })}</div>}
                   <div className="muted">{platform.dims.w} × {platform.dims.d} × {platform.dims.h} m · {fmtInt(platform.weightKg)} kg · {platform.formFactor?.rack ?? t('architecture.value.undeclared')}</div>
                 </div>
               )}
@@ -265,13 +264,12 @@ export function ArchitecturePanel() {
           <div className="grid-2">
             {STANDARD_TEMPLATES.map((x) => {
               const slot = x.computeSlots[0];
-              const nvidia = slot.platforms.filter((id) => platformFamilyById(id) === 'nvidia').length;
-              const amd = slot.platforms.filter((id) => platformFamilyById(id) === 'amd').length;
-              const npu = slot.platforms.filter((id) => platformFamilyById(id) === 'npu').length;
+              const def = findCatalogItem(slot.defaultPlatform ?? x.pod.gpuRackCatalogId);
+              const dsum = def ? platformSummary(def, locale) : null;
               return (
                 <button key={x.id} className={`card ${templateId === x.id ? 'active' : ''}`} style={{ textAlign: 'left', cursor: 'pointer', margin: 0 }} onClick={() => setTemplateId(x.id)} disabled={!templateCompatible(x, platformId)}>
                   <div className="row wrap"><strong>{x.name}</strong><span className="badge std-level">{t('architecture.badge.ocpInterface')}</span><SourceBadge source={x.source} /></div>
-                  <div className="caption">{x.profile?.rackForm ?? '—'} · {x.pod.containment.toUpperCase()} · NVIDIA {nvidia} / AMD {amd} / NPU {npu}</div>
+                  <div className="caption">{dsum ? dsum.plain : x.profile?.rackForm ?? '—'} · {t('architecture.baseline.platforms', { n: slot.platforms.length })}</div>
                 </button>
               );
             })}

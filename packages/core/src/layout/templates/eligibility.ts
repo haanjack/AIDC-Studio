@@ -114,6 +114,84 @@ const CLASS_LABEL: Record<NeutralRackClass, { en: string; ko: string }> = {
 const COOLING_LABEL: Record<CoolingClass, { en: string; ko: string }> = { air: { en: 'air', ko: '공랭' }, hybrid: { en: 'hybrid', ko: '하이브리드' }, dlc: { en: 'direct liquid', ko: '직접 액체냉각' } };
 const lbl = <T extends string>(m: Record<T, { en: string; ko: string }>, keys: readonly T[], lang: 'en' | 'ko') => keys.map((k) => m[k]?.[lang] ?? k).join(lang === 'en' ? ' / ' : ' / ');
 
+// ───────────────────────────── plain-language platform summary ─────────────────────────────
+
+/**
+ * Why this exists: the neutral rack class drives eligibility, but its name ("8-module accelerator node rack") is vocabulary a
+ * reader only meets when a pick is rejected. `platformSummary` states the same class in the units a data-centre planner already
+ * uses — accelerators per node, nodes per rack, cooling, rack width, rack kW — and leaves the specification designations as a
+ * secondary annotation for readers who follow them. Derived from declared data only; no vendor names.
+ */
+export interface PlatformSummary {
+  /** e.g. "8 accelerators/node × 5 nodes · direct liquid · 21-inch OU rack · ≈53 kW/rack" */
+  plain: string;
+  /** neutral class name, e.g. "8-module accelerator node rack" */
+  className: string;
+  /** the generic class a vendor instance implements (`standards[].classId`), when it declares one */
+  classId?: string;
+  /** specification designations the item declares, e.g. ['ORv3 Base 1.1', 'OAM Base 2.0'] */
+  specs: string[];
+}
+
+/** Registry id → compact designation: 'orv3-base@1.1' → 'ORv3 Base 1.1'. Ids are neutral keys, so this is formatting, not a claim. */
+function specDesignation(standardId: string): string | undefined {
+  if (!standardId || standardId === 'none') return undefined;
+  const [name, version] = standardId.split('@');
+  const word = (w: string) => {
+    const u = w.toUpperCase();
+    if (['OAM', 'UBB', 'ORW', 'BBU', 'PSU', 'NIC', 'HPR', 'EIA', 'SAI', 'CDU', 'MGX', 'PBMC', 'BMQC', 'UQD', 'UQDB', 'LQC'].includes(u)) return u;
+    if (u === 'ORV3') return 'ORv3';
+    return w.charAt(0).toUpperCase() + w.slice(1);
+  };
+  const base = name.split('-').map(word).join(' ');
+  return version ? `${base} ${version}` : base;
+}
+
+/**
+ * Display order for platform pickers: generic classes first, then vendor instances, each group alphabetical by name.
+ *
+ * Deliberately has no vendor ranking table — ordering vendors by a hardcoded list is the thing this replaces, and any
+ * such list silently states a preference. Alphabetical order inside the vendor group is neutral by construction.
+ */
+export function comparePlatformsForDisplay(a: CatalogItem, b: CatalogItem): number {
+  const generic = (x: CatalogItem) => (x.vendor === 'Generic' || x.meta?.generic === true ? 0 : 1);
+  return generic(a) - generic(b) || a.name.localeCompare(b.name);
+}
+
+/** Plain-language summary of a compute rack, built from declared data. */
+export function platformSummary(item: CatalogItem, lang: 'en' | 'ko' = 'en'): PlatformSummary {
+  const cls = rackClassOf(item);
+  const cooling = coolingClassOf(item);
+  const form = item.formFactor?.rack ?? rackFormFromMeta(item.meta?.rackForm);
+  const c = item.compute;
+  const parts: string[] = [];
+
+  const perNode = c?.gpusPerNode;
+  const nodes = c?.nodesPerRack;
+  if (cls === 'rack-scale-liquid' && c?.gpus)
+    parts.push(lang === 'en' ? `${c.gpus} accelerators in one rack` : `랙 1대에 가속기 ${c.gpus}개`);
+  else if (perNode && nodes)
+    parts.push(lang === 'en' ? `${perNode} accelerators/node × ${nodes} nodes` : `노드당 가속기 ${perNode}개 × ${nodes}노드`);
+  else if (c?.gpus) parts.push(lang === 'en' ? `${c.gpus} accelerators` : `가속기 ${c.gpus}개`);
+
+  parts.push(COOLING_LABEL[cooling][lang]);
+  if (form) parts.push(FORM_LABEL[form]?.[lang] ?? form);
+  const kw = item.power?.nameplateKW;
+  if (kw) parts.push(lang === 'en' ? `\u2248${kw} kW/rack` : `랙당 약 ${kw} kW`);
+
+  const specs: string[] = [];
+  for (const st of item.standards ?? []) {
+    const d = specDesignation(st.standardId);
+    if (d && !specs.includes(d)) specs.push(d);
+  }
+  return {
+    plain: parts.join(' \u00b7 '),
+    className: cls ? CLASS_LABEL[cls][lang] : lang === 'en' ? 'class not declared' : '클래스 미선언',
+    classId: (item.standards ?? []).map((st) => st.classId).find(Boolean),
+    specs,
+  };
+}
+
 /** OAM r2.0 module envelope, UBB r2.0 board envelope, air recommendation, NIC 3.0 slot envelopes (registry-cited values). */
 const OAM_MODULE_W = 1000;
 const OAM_AIR_W = 600;

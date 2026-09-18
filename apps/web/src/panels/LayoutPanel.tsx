@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { applyHallLayout, autoSizeBaseOptions, autoSizeGridChoice, fabricSwitchFor, autoSizeHall, autoSizeLayoutOptions, CABLE_REACH_M, catalogItems, CORRIDOR_DEFAULTS, defaultServicesZone, defaultSpinePlacement, findCatalogItem, acceleratorRacksPerDu, builtinCatalog, coolantLimitCheck, libraryWithRegistration, mixedComputeFamilies, slotMissingEquipmentIds, templateSlotKey, type AutoSizeResult, registerPlatformInProject, registrablePlatforms, slotPlatformOptions, unregisteredPlatforms, withTemplateSlot, type AutoSizeReport, type AutoSizeRequest, type CatalogItem, type ComputeSlot, generateHallLayout, hallShortfall, LAYOUT_TEMPLATES, layoutOptionsFromProject, normalizePlacement, notchKeepouts, podSizing, resolveLayoutTemplate, rowEndWalls, SERVICES_ZONE_MODES, spinePlacementsForGrowth, type Containment, type EquipmentInstance, type FitCandidate, type FitOptions, type GridChoice, type GrowthPattern, type HallLayoutOptions, type LayoutPolicy, type PodTemplate, type Project, type ServicesZoneMode, type SizingSuggestion, type SpinePlacement, type Wall, layoutReachRunM, defaultWaveStart, DEFAULT_TEMPLATE_ID, effectiveStandardsProfile, platformEligibility, slotCandidates } from '@aidc/core';
+import { applyHallLayout, autoSizeBaseOptions, autoSizeGridChoice, fabricSwitchFor, autoSizeHall, autoSizeLayoutOptions, CABLE_REACH_M, catalogItems, CORRIDOR_DEFAULTS, defaultServicesZone, defaultSpinePlacement, findCatalogItem, acceleratorRacksPerDu, builtinCatalog, coolantLimitCheck, libraryWithRegistration, mixedComputeFamilies, slotMissingEquipmentIds, templateSlotKey, type AutoSizeResult, registerPlatformInProject, registrablePlatforms, slotPlatformOptions, unregisteredPlatforms, withTemplateSlot, type AutoSizeReport, type AutoSizeRequest, type CatalogItem, type ComputeSlot, generateHallLayout, hallShortfall, LAYOUT_TEMPLATES, layoutOptionsFromProject, normalizePlacement, notchKeepouts, podSizing, resolveLayoutTemplate, rowEndWalls, SERVICES_ZONE_MODES, spinePlacementsForGrowth, type Containment, type EquipmentInstance, type FitCandidate, type FitOptions, type GridChoice, type GrowthPattern, type HallLayoutOptions, type LayoutPolicy, type PodTemplate, type Project, type ServicesZoneMode, type SizingSuggestion, type SpinePlacement, type Wall, layoutReachRunM, defaultWaveStart, DEFAULT_TEMPLATE_ID, effectiveStandardsProfile, platformEligibility, platformSummary, slotCandidates } from '@aidc/core';
 import { GenerationReportCard, replaceProject } from '../ui/IssueFixes.tsx';
 import { libraryCache, projectGrowth, useApp } from '../store/appStore.ts';
 import { PLACEABLE, catalogOptions, equipmentKW, findFreeSpot, hallEquipment } from '../app/derived.ts';
@@ -974,16 +974,21 @@ function SlotEligibilityList({ templateId, slotId, currentId, hallId }: { templa
       <details style={{ margin: '-4px 0 10px' }} data-slot-eligibility={slotId}>
         <summary className="small" style={{ cursor: 'pointer' }}>{t('standards.ui.elig.title', { eligible: cands.filter((c) => c.eligible).length, total: cands.length })}</summary>
         <div style={{ maxHeight: 240, overflowY: 'auto', paddingTop: 4 }}>
-          {cands.map((c) => (
+          {cands.map((c) => {
+            const item = findCatalogItem(c.catalogId);
+            const sum = item ? platformSummary(item, locale) : null;
+            return (
             <div key={c.catalogId} className="small" style={{ padding: '3px 0', opacity: c.eligible ? 1 : 0.6 }} data-elig={c.eligible ? 'eligible' : 'ineligible'} data-elig-id={c.catalogId} title={c.notes.map(txt).join('\n') || undefined}>
               <span className={`badge ${c.eligible ? 'src-open-standard' : ''}`}>{t(c.eligible ? 'standards.ui.elig.eligible' : 'standards.ui.elig.ineligible')}</span>{' '}
               {c.name}
               {c.registered && <span className="hint"> · {t('standards.ui.elig.registered')}</span>}
               {c.draftChip && <> <span className="badge warn" title={t('standards.chip.draftTip')}>{t('standards.chip.draft')}</span></>}
               {!c.eligible && <div className="hint" style={{ marginLeft: 8 }}>{c.reasons.map(txt).join('; ')}</div>}
+              {sum && <div className="hint" style={{ marginLeft: 8 }} data-elig-summary={c.catalogId}>{sum.plain}</div>}
               {c.eligible && c.notes.length > 0 && <div className="hint" style={{ marginLeft: 8 }}>{t('standards.ui.elig.notes')}: {c.notes.map(txt).join('; ')}</div>}
             </div>
-          ))}
+            );
+          })}
           {hidden > 0 && <div className="hint">{t('standards.ui.elig.hidden', { n: hidden })}</div>}
         </div>
       </details>
