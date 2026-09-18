@@ -35,7 +35,7 @@ Other names may be trademarks of their respective owners. The owners' exact lega
 
 ## The "AIDC Studio" name
 
-"AIDC Studio" and its logo identify this project. The MIT License grants permission to use the software; it does not grant trademark rights in the project name or logo. Reasonable use of the name to describe the software's origin is permitted. If you distribute a modified version, give it a name that does not suggest it is the original project, or state clearly that it is modified.
+"AIDC Studio" and its logo identify this project. The Apache License 2.0 grants permission to use the software; section 6 expressly withholds trademark rights in the project name or logo. Reasonable use of the name to describe the software's origin is permitted. If you distribute a modified version, give it a name that does not suggest it is the original project, or state clearly that it is modified.
 
 ## Reporting a concern
 

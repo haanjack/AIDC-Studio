@@ -1,10 +1,18 @@
 AIDC Studio
 Copyright 2026 haanjack
 
-This product is licensed under the MIT License (see LICENSE) and is provided
-"AS IS", without warranty of any kind. This NOTICE file collects third-party
-attributions and trademark information for convenient distribution; the MIT
-License does not require this file to accompany copies of AIDC Studio.
+Licensed under the Apache License, Version 2.0 (the "License"); you may not use
+this product except in compliance with the License. You may obtain a copy of the
+License in the LICENSE file at the root of this distribution, or at
+http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software distributed
+under the License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR
+CONDITIONS OF ANY KIND, either express or implied.
+
+Section 4(d) of the License requires that this NOTICE file accompany any
+Derivative Works you distribute. It collects the third-party attributions and
+trademark information below.
 
 Third-party software
 --------------------
@@ -55,6 +63,11 @@ SemiAnalysis does not sponsor or endorse AIDC Studio.
 
 Trademarks
 ----------
+This NOTICE and the License do not grant permission to use the trade names,
+trademarks, service marks or product names of the Licensor or of any third
+party, except as required for reasonable and customary use in describing the
+origin of the work (License section 6).
+
 Company and product names used in AIDC Studio (for example NVIDIA, GB300,
 NVL72, AMD, Helios, Instinct, Vertiv, Liebert) are trademarks of their
 respective owners and are used only to identify compatible products. MLPerf is
