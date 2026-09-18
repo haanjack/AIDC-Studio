@@ -63,7 +63,7 @@ describe('P6 term guard: the blueprint abbreviation lives in README.md only', ()
   const files = repoFiles();
 
   it('scans the published tree (source, tests, tools, public docs, notices)', () => {
-    for (const f of ['packages/core/src/index.ts', 'apps/web/src/App.tsx', 'apps/server/src/storage.ts', 'tools/licenses/asset_inventory.py', 'docs/PRODUCT.md', 'docs/ARCHITECTURE.md', 'NOTICE', 'TRADEMARKS.md']) {
+    for (const f of ['packages/core/src/index.ts', 'apps/web/src/App.tsx', 'apps/server/src/storage.ts', 'tools/licenses/check-publication.mjs', 'docs/PRODUCT.md', 'docs/ARCHITECTURE.md', 'NOTICE', 'TRADEMARKS.md']) {
       expect(files, f).toContain(f);
     }
     expect(files.some((f) => f.startsWith('docs/research/') || f.startsWith('data/') || f.startsWith('assets/'))).toBe(false);
