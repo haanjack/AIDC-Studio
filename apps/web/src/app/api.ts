@@ -1,4 +1,4 @@
-import type { CableType, CatalogItem, CatalogLibrary, Project, ProjectAnalysis } from '@aidc/core';
+import type { CableType, CatalogItem, CatalogLibrary, InferenceXPublicRow, Project, ProjectAnalysis } from '@aidc/core';
 import { commonHeaders, recordRev, saveHeaders, session, setSharedSecret } from './session.ts';
 
 export interface ProjectListItem {
@@ -112,6 +112,8 @@ export const api = {
   // S3: catalog (builtin ∪ library merged) and the server-global library (data/catalog/custom.json)
   getCatalog: () => request<{ items: CatalogItem[]; cables: CableType[] }>('/api/catalog'),
   getCatalogLibrary: () => request<CatalogLibrary & { file?: string }>('/api/catalog/custom', {}, 8000),
+  inferenceXBenchmarks: (presetId: string) => request<{ model: string; rows: InferenceXPublicRow[]; cached: boolean }>(`/api/inferencex/benchmarks?presetId=${encodeURIComponent(presetId)}`, {}, 20000),
+  inferenceXAgenticBenchmarks: (presetId: string) => request<{ model: string; rows: InferenceXPublicRow[]; cached: boolean }>(`/api/inferencex/benchmarks?presetId=${encodeURIComponent(presetId)}&sequence=agentic-traces`, {}, 20000),
   // polish v2 2차: the current project and its lock token go along — the server refuses (423) while another holder has that project's lock
   putCatalogLibrary: async (lib: CatalogLibrary, projectId?: string) => {
     const put = (token: string | undefined) =>

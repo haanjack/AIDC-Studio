@@ -3,7 +3,7 @@ import type { SVGProps } from 'react';
 type IconName =
   | 'overview' | 'site' | 'layout' | 'architecture' | 'power' | 'cooling' | 'network' | 'workload' | 'cost' | 'schedule' | 'docs' | 'catalog' | 'drawings'
   | 'check' | 'warning' | 'error' | 'info' | 'play' | 'stop' | 'download' | 'undo' | 'redo' | 'save' | 'plus' | 'trash'
-  | 'camera' | 'expand' | 'collapse' | 'layers' | 'move' | 'rotate' | 'copy' | 'upload' | 'refresh' | 'cube' | 'chevron';
+  | 'camera' | 'expand' | 'collapse' | 'layers' | 'move' | 'rotate' | 'copy' | 'upload' | 'refresh' | 'cube' | 'chevron' | 'sun' | 'moon';
 
 const PATHS: Record<IconName, string> = {
   overview: 'M4 4h7v7H4zM13 4h7v4h-7zM13 10h7v10h-7zM4 13h7v7H4z',
@@ -42,6 +42,8 @@ const PATHS: Record<IconName, string> = {
   refresh: 'M20 11a8 8 0 0 0-14.9-3M4 4v5h5M4 13a8 8 0 0 0 14.9 3M20 20v-5h-5',
   cube: 'M12 3 3 7.5v9L12 21l9-4.5v-9zM3 7.5 12 12l9-4.5M12 12v9',
   chevron: 'M9 6l6 6-6 6',
+  sun: 'M12 3v2M12 19v2M4.2 4.2l1.4 1.4M18.4 18.4l1.4 1.4M3 12h2M19 12h2M4.2 19.8l1.4-1.4M18.4 5.6l1.4-1.4M16 12a4 4 0 1 1-8 0 4 4 0 0 1 8 0z',
+  moon: 'M20 15.3A8.5 8.5 0 0 1 8.7 4 8.5 8.5 0 1 0 20 15.3z',
 };
 
 export function Icon({ name, size = 16, ...rest }: { name: IconName; size?: number } & SVGProps<SVGSVGElement>) {

@@ -8,6 +8,8 @@ import {
   cableTypes,
   catalogItems,
   EXPORT_FORMATS,
+  inferenceXApiUrl,
+  inferenceXModelName,
   resolveCatalog,
   withCatalog,
   type CatalogLibrary,
@@ -43,6 +45,7 @@ export interface ServerOptions {
 }
 
 const VERSION = '0.1.0';
+const inferenceXCache = new Map<string, { expiresAt: number; rows: unknown[] }>();
 
 /**
  * Server-global catalog library (stream S3 fills this from data/catalog/*.json via GET/PUT /api/catalog/custom).
@@ -141,6 +144,30 @@ export async function buildServer(opts: ServerOptions = {}): Promise<FastifyInst
 
   // builtin ∪ server library (project extensions travel with the project itself)
   app.get('/api/catalog', async () => withCatalog(resolveCatalog(undefined, library), () => ({ items: catalogItems(), cables: cableTypes() })));
+
+  // Public, read-only benchmark bridge. The upstream API has no browser CORS contract, so the local server performs the
+  // fixed-origin request; clients still rank rows against topology, precision, ISL/OSL and SLO locally.
+  app.get<{ Querystring: { presetId?: string; sequence?: string } }>('/api/inferencex/benchmarks', async (req, reply) => {
+    const publicModel = inferenceXModelName(req.query.presetId);
+    if (!publicModel) return reply.code(400).send({ error: 'no exact InferenceX model mapping for this preset' });
+    const sequence = req.query.sequence === 'agentic-traces' ? 'agentic-traces' as const : undefined;
+    if (req.query.sequence && !sequence) return reply.code(400).send({ error: 'unsupported InferenceX sequence' });
+    const cacheKey = `${publicModel}:${sequence ?? 'default'}`;
+    const cached = inferenceXCache.get(cacheKey);
+    if (cached && cached.expiresAt > Date.now()) return { model: publicModel, rows: cached.rows, cached: true };
+    let upstream: Response;
+    try {
+      upstream = await fetch(inferenceXApiUrl(publicModel, sequence), { headers: { accept: 'application/json', 'user-agent': 'AIDC-Studio/0.1' }, signal: AbortSignal.timeout(15000) });
+    } catch (error) {
+      return reply.code(502).send({ error: `InferenceX API unavailable: ${error instanceof Error ? error.message : String(error)}` });
+    }
+    if (!upstream.ok) return reply.code(502).send({ error: `InferenceX API returned ${upstream.status}` });
+    const body = await upstream.json() as unknown;
+    if (!Array.isArray(body)) return reply.code(502).send({ error: 'InferenceX API returned an unexpected response shape' });
+    const rows = body.slice(0, 5000);
+    inferenceXCache.set(cacheKey, { expiresAt: Date.now() + 15 * 60_000, rows });
+    return { model: publicModel, rows, cached: false };
+  });
 
   // ─────────── S3: server-global catalog library (data/catalog/custom.json) ───────────
   app.get('/api/catalog/custom', async () => ({ items: library.items ?? [], cables: library.cables ?? [], file: catalogStore.file }));

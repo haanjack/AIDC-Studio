@@ -20,6 +20,7 @@ Company names, product names and model designations appear only to identify the 
 | InfiniBand Trade Association | InfiniBand |
 | MLCommons Association | MLPerf® |
 | Meta Platforms, Inc.; Google LLC | Llama; Gemma |
+| SemiAnalysis | SemiAnalysis; InferenceX |
 | Open Compute Project Foundation; UALink Consortium; Ultra Ethernet Consortium; The Linux Foundation | OCP; UALink; Ultra Ethernet; SONiC |
 | Pixar / Alliance for OpenUSD; Godot Foundation; Epic Games, Inc. | Universal Scene Description (USD), OpenUSD; Godot; Unreal Engine |
 

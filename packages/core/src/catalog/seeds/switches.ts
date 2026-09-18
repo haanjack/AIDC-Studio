@@ -3,7 +3,7 @@ import type { CatalogItem } from '../../model/types.ts';
 /**
  * Switch and NIC seeds (proposal §3.7): Broadcom TH5/TH6 generic boxes, DriveNets 2500S / 5300R / 9300F (AMD × DriveNets
  * RA Tables 5, 9, 10 — vendor-datasheet), Arista 7700R4C-38PE / 7720R4-128PE (AMD MI3XX RA power table — public-spec),
- * Cisco Nexus 9364E-SG2, Dell Z9864F-ON, Juniper QFX5240-64OD (64 × 800G merchant/Silicon One boxes — estimates), and
+ * Arista 7060X6-64PE, Cisco Nexus 9364E-SG2, Dell Z9864F-ON, Juniper QFX5240-64OD (64 × 800G merchant/Silicon One boxes), and
  * NICs (ConnectX-7/8/9, AMD Pollara 400, Broadcom Thor2) as the new 'nic' category (never placed on the floor).
  *
  * FabricTech (aligned with S2's engines/network.ts): DriveNets 5300R / 9300F carry 'drivenets-fse' (DDC sizing reads
@@ -78,6 +78,15 @@ export const SWITCH_CATALOG: CatalogItem[] = [
     notes: 'AMD × DriveNets RA Table 10: 1,113 W typical / 1,918 W max, 263 × 440 × 668.2 mm, 63 kg. Every NCP has one 400G link to every NCF → NCF racks are the most cable-dense point (7–10 racks for 8K GPUs). Price estimate.',
   }),
   SW({
+    id: 'arista-7060x6-64pe', vendor: 'Arista', model: '7060X6-64PE', name: 'Arista 7060X6-64PE (800G ×64, 51.2T)',
+    description: 'Arista fixed 51.2 Tb/s Ethernet switch, 64 × 800G OSFP, 2RU. It is an Ethernet/RoCEv2 option, not an InfiniBand Quantum replacement.',
+    switch: { fabric: 'roce-generic-800', ports: 64, portGbps: 800, rackUnits: 2, role: 'any' },
+    power: { nameplateKW: 2.2, typicalKW: 1.3, idleKW: 0.6, peakKW: 2.2, feeds: 2, voltageV: 230 },
+    weightKg: 23, cost: { capexUSD: 90_000, installHours: 4, leadTimeWeeks: 14 }, source: 'public-spec',
+    links: [{ label: 'Arista 7060X6 data sheet', url: 'https://www.arista.com/assets/data/pdf/Datasheets/7060X6-Datasheet.pdf' }],
+    notes: '64 × 800G / 51.2T and RoCEv2 support are public specifications. Power, weight, price and lead time are planning estimates; validate 2 × 400G breakout optics and the chosen EOS congestion-control profile with the selected SKU.',
+  }),
+  SW({
     id: 'arista-7700r4c-38pe', vendor: 'Arista', model: '7700R4C-38PE', name: 'Arista 7700R4C-38PE (DES leaf, 800G ×38)',
     description: 'Arista Distributed Etherlink Switch leaf (Jericho3-AI class): 38 × 800G OSFP (18 network + 20 fabric), 2RU.',
     switch: { fabric: 'roce-generic-800', ports: 38, portGbps: 800, rackUnits: 2, role: 'leaf', netPorts: 18, fabricPorts: 20 },
@@ -100,27 +109,27 @@ export const SWITCH_CATALOG: CatalogItem[] = [
     description: 'Cisco Nexus 9300 series fixed switch on Silicon One G200, 64 × 800G OSFP (51.2T), 2RU, NX-OS / SONiC.',
     switch: { fabric: 'roce-generic-800', ports: 64, portGbps: 800, rackUnits: 2, role: 'any' },
     power: { nameplateKW: 2.2, typicalKW: 1.3, idleKW: 0.6, peakKW: 2.2, feeds: 2, voltageV: 230 },
-    weightKg: 24, cost: { capexUSD: 95_000, installHours: 4, leadTimeWeeks: 14 }, source: 'estimate',
-    links: [{ label: 'Cisco Nexus 9000', url: 'https://www.cisco.com/c/en/us/products/switches/nexus-9000-series-switches/index.html' }],
-    notes: 'Port count / ASIC public; power, weight and price are estimates (datasheet not re-checked).',
+    weightKg: 24, cost: { capexUSD: 95_000, installHours: 4, leadTimeWeeks: 14 }, source: 'public-spec',
+    links: [{ label: 'Cisco Nexus 9364E-SG2 data sheet', url: 'https://www.cisco.com/c/en/us/products/collateral/switches/nexus-9000-series-switches/nexus-9364e-sg2-switch-ds.pdf' }],
+    notes: '64 × 800G / 51.2T and Silicon One G200 are public specifications. Power, weight, price and lead time are planning estimates; validate the selected 400G breakout optic/cable SKU and NX-OS or SONiC RoCE configuration before construction.',
   }),
   SW({
     id: 'dell-z9864f-on', vendor: 'Dell', model: 'Z9864F-ON', name: 'Dell PowerSwitch Z9864F-ON (800G ×64, TH5)',
     description: 'Dell PowerSwitch on Tomahawk 5, 64 × 800G OSFP (51.2T), 2RU, Enterprise SONiC / OS10.',
     switch: { fabric: 'roce-generic-800', ports: 64, portGbps: 800, rackUnits: 2, role: 'any' },
     power: { nameplateKW: 1.8, typicalKW: 1.1, idleKW: 0.5, peakKW: 1.8, feeds: 2, voltageV: 230 },
-    weightKg: 23, cost: { capexUSD: 80_000, installHours: 4, leadTimeWeeks: 12 }, source: 'estimate',
-    links: [{ label: 'Dell AI Factory', url: 'https://www.dell.com/en-us/lp/dt/ai-factory' }],
-    notes: 'TH5-class box; power, weight and price are estimates.',
+    weightKg: 23, cost: { capexUSD: 80_000, installHours: 4, leadTimeWeeks: 12 }, source: 'public-spec',
+    links: [{ label: 'Dell Z9864F-ON installation guide', url: 'https://www.dell.com/support/manuals/en-us/networking-z9864f-on/z9864f-on_install_pub/introduction?guid=guid-20cc9fe6-045e-4a3b-b5b9-78f4a818b22d&lang=en-us' }, { label: 'Dell AI switches', url: 'https://www.dell.com/en-us/shop/ai-switches/sf/ai-switches' }],
+    notes: '64 × 800G / 51.2T and 400G breakout options are public product specifications; Dell lists RoCEv2 AI networking. Power, weight, price and lead time are planning estimates.',
   }),
   SW({
     id: 'juniper-qfx5240-64od', vendor: 'Juniper (HPE)', model: 'QFX5240-64OD', name: 'Juniper QFX5240-64OD (800G ×64, TH5)',
     description: 'Juniper QFX5240 on Tomahawk 5, 64 × 800G OSFP (51.2T), 2RU, Junos (Apstra-managed).',
     switch: { fabric: 'roce-generic-800', ports: 64, portGbps: 800, rackUnits: 2, role: 'any' },
     power: { nameplateKW: 1.8, typicalKW: 1.1, idleKW: 0.5, peakKW: 1.8, feeds: 2, voltageV: 230 },
-    weightKg: 23, cost: { capexUSD: 85_000, installHours: 4, leadTimeWeeks: 12 }, source: 'estimate',
-    links: [{ label: 'Juniper QFX5240', url: 'https://www.juniper.net/us/en/products/switches/qfx-series/qfx5240-data-center-switches.html' }],
-    notes: 'TH5-class box; power, weight and price are estimates (juniper.net product page bot-blocked when checked).',
+    weightKg: 23, cost: { capexUSD: 85_000, installHours: 4, leadTimeWeeks: 12 }, source: 'public-spec',
+    links: [{ label: 'Juniper QFX5240-64OD', url: 'https://www.juniper.net/gb/en/products/switches/qfx-series/qfx5240-data-center-switches.html' }],
+    notes: '64 × 800G / 51.2T, 128 × 400G breakout and RoCEv2 are public specifications. Power, weight, price and lead time are planning estimates.',
   }),
 ];
 

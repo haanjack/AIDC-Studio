@@ -1,5 +1,5 @@
 import {
-  applyModelPreset, catalogItems, FABRIC_SWITCH, findCatalogItem, findModelPreset, footprintRect, instanceRect, rectContains, rectsOverlap,
+  applyModelPreset, catalogItems, FABRIC_SWITCH, findCatalogItem, findModelPreset, footprintRect, instanceRect, MODEL_PRESETS, rectContains, rectsOverlap,
   type CatalogItem, type EquipmentCategory, type FabricTech, type Project, type Rect, type Vec2, type WorkloadBlueprint,
 } from '@aidc/core';
 import type { ThermalMetrics } from '@aidc/thermal';
@@ -160,7 +160,16 @@ const presetModel = (presetId: string, seqLen: number): WorkloadBlueprint['model
   return applyModelPreset({ name: p.name, paramsB: p.paramsB, activeParamsB: p.activeParamsB, layers: p.layers, hiddenSize: p.hiddenSize, seqLen }, p);
 };
 
-export const WORKLOAD_TEMPLATES: { key: string; label: string; labelKey: string; presetId: string; make: () => WorkloadBlueprint }[] = [
+export interface WorkloadTemplate {
+  key: string;
+  label: string;
+  labelKey: string;
+  labelParams?: Record<string, string | number>;
+  presetId: string;
+  make: () => WorkloadBlueprint;
+}
+
+const CURATED_WORKLOAD_TEMPLATES: WorkloadTemplate[] = [
   {
     key: 'pretrain-llama3.1-405b', label: 'Pre-training — Llama 3.1 405B (dense)', labelKey: 'workload.tpl.pretrain405b', presetId: 'llama3.1-405b',
     make: () => ({
@@ -196,10 +205,10 @@ export const WORKLOAD_TEMPLATES: { key: string; label: string; labelKey: string;
       id: uid('wl'), name: 'MoE Inference — DeepSeek-R1 671B', kind: 'llm-inference', gpuShare: 0.25, presetId: 'deepseek-r1',
       model: presetModel('deepseek-r1', 32768),
       inference: {
-        requestsPerSec: 400, inputTokens: 2000, outputTokens: 600, ttftSloMs: 1000, tpotSloMs: 40, disaggregated: true, weightPrecision: 'fp8', kvPrecision: 'fp8',
-        parallelism: { tp: 4, pp: 1, ep: 2, cp: 1 },
-        prefillParallelism: { tp: 4, pp: 1, ep: 2, cp: 1 },
-        decodeParallelism: { tp: 4, pp: 1, ep: 2, cp: 1 },
+        requestsPerSec: 300, inputTokens: 2000, outputTokens: 600, ttftSloMs: 1000, tpotSloMs: 40, disaggregated: true, weightPrecision: 'fp8', kvPrecision: 'fp8',
+        parallelism: { tp: 8, pp: 1, ep: 8, cp: 1, expertMapping: 'shared' },
+        prefillParallelism: { tp: 8, pp: 1, ep: 8, cp: 1, expertMapping: 'shared' },
+        decodeParallelism: { tp: 8, pp: 1, ep: 8, cp: 1, expertMapping: 'shared' },
       },
       durationDays: 30,
     }),
@@ -238,3 +247,32 @@ export const WORKLOAD_TEMPLATES: { key: string; label: string; labelKey: string;
     }),
   },
 ];
+
+// Keep every architecture preset reachable from the first "Add workload" control. Curated templates above retain their
+// published/default job shapes; the remaining presets receive an editable neutral inference starting point.
+const curatedInferencePresets = new Set(CURATED_WORKLOAD_TEMPLATES.filter((x) => x.key.startsWith('inference-')).map((x) => x.presetId));
+const generatedInferenceTemplates: WorkloadTemplate[] = MODEL_PRESETS
+  .filter((p) => !curatedInferencePresets.has(p.id))
+  .map((p) => {
+    const tp = p.paramsB > 1000 ? 8 : p.paramsB > 100 ? 4 : p.paramsB > 40 ? 2 : 1;
+    const ep = p.kind === 'moe' ? (p.paramsB > 1000 ? 8 : 4) : 1;
+    return {
+      key: `inference-${p.id}`,
+      label: `Inference — ${p.name}`,
+      labelKey: 'workload.tpl.inferGeneric',
+      labelParams: { name: p.name },
+      presetId: p.id,
+      make: (): WorkloadBlueprint => ({
+        id: uid('wl'), name: `Inference — ${p.name}`, kind: 'llm-inference', gpuShare: 0.1, presetId: p.id,
+        model: presetModel(p.id, p.contextLen),
+        inference: {
+          requestsPerSec: 100, inputTokens: Math.min(8192, Math.max(1, p.contextLen - 1024)), cachedPrefixTokens: 0,
+          outputTokens: Math.min(1024, Math.max(1, p.contextLen - 1)), ttftSloMs: 1000, tpotSloMs: 50,
+          disaggregated: false, weightPrecision: 'fp8', kvPrecision: 'fp8', parallelism: { tp, pp: 1, ep, cp: 1 },
+        },
+        durationDays: 30,
+      }),
+    };
+  });
+
+export const WORKLOAD_TEMPLATES: WorkloadTemplate[] = [...CURATED_WORKLOAD_TEMPLATES, ...generatedInferenceTemplates];

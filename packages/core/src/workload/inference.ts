@@ -29,17 +29,86 @@ const WEIGHT_RUNTIME_FACTOR = 1.2;
 /** Conservative model-memory limit; the remainder covers backend workspace and fragmentation. */
 export const INFERENCE_HBM_UTILIZATION = 0.9;
 
-export const DEFAULT_INFERENCE_PARALLELISM: InferenceParallelism = { tp: 1, pp: 1, ep: 1, cp: 1 };
+export const DEFAULT_INFERENCE_PARALLELISM: InferenceParallelism = { tp: 1, pp: 1, ep: 1, cp: 1, expertMapping: 'shared' };
+
+/** Split the logical prompt from the portion that needs new prefill work. */
+export function inferencePromptTokens(inference: NonNullable<WorkloadBlueprint['inference']>): {
+  input: number;
+  cached: number;
+  gpuCached: number;
+  remoteCached: number;
+  uncached: number;
+  transfer: number;
+  hitRatio: number;
+  mode: 'fixed-prefix' | 'trace';
+} {
+  const input = Math.max(0, inference.inputTokens);
+  const trace = inference.prefixCacheTrace;
+  if (trace) {
+    const rate = (v: number | undefined) => Math.min(1, Math.max(0, Number.isFinite(v) ? v! : 0));
+    const gpuHit = rate(trace.gpuHitRate);
+    // AgentX backends can report CPU and external counters for the same host-side reuse path.
+    // Treat the larger counter as the remote tier instead of double-counting both.
+    const remoteHit = Math.min(1 - gpuHit, Math.max(rate(trace.cpuHitRate), rate(trace.externalHitRate)));
+    const gpuCached = input * gpuHit;
+    const remoteCached = input * remoteHit;
+    const cached = gpuCached + remoteCached;
+    const uncached = Math.max(0, input - cached);
+    return {
+      input,
+      cached,
+      gpuCached,
+      remoteCached,
+      uncached,
+      transfer: remoteCached + (inference.disaggregated ? uncached : 0),
+      hitRatio: input > 0 ? cached / input : 0,
+      mode: 'trace',
+    };
+  }
+  const cached = Math.min(input, Math.max(0, inference.cachedPrefixTokens ?? 0));
+  const uncached = input - cached;
+  return {
+    input,
+    cached,
+    gpuCached: cached,
+    remoteCached: 0,
+    uncached,
+    transfer: inference.disaggregated ? uncached : 0,
+    hitRatio: input > 0 ? cached / input : 0,
+    mode: 'fixed-prefix',
+  };
+}
 
 /** Clamp user/imported values to a valid, deterministic integer topology. */
 export function normalizeInferenceParallelism(value?: Partial<InferenceParallelism>, fallback: InferenceParallelism = DEFAULT_INFERENCE_PARALLELISM): InferenceParallelism {
   const degree = (v: number | undefined, d: number) => Math.max(1, Math.round(Number.isFinite(v) ? v! : d));
+  const dp = value?.dp ?? fallback.dp;
   return {
     tp: degree(value?.tp, fallback.tp),
     pp: degree(value?.pp, fallback.pp),
     ep: degree(value?.ep, fallback.ep),
     cp: degree(value?.cp, fallback.cp),
+    expertMapping: value?.expertMapping === 'orthogonal' || value?.expertMapping === 'shared'
+      ? value.expertMapping
+      : fallback.expertMapping ?? 'shared',
+    ...(dp !== undefined ? { dp: degree(dp, 1) } : {}),
   };
+}
+
+/** Stable binding for an inference calibration. RPS and DP are excluded: they change replica count, not one-replica performance. */
+export function inferenceCalibrationSignature(w: WorkloadBlueprint): string | undefined {
+  const inf = w.inference;
+  if (!inf) return undefined;
+  const topology = (stage: InferenceStage) => {
+    const p = inferenceParallelismFor(inf, stage);
+    return `${p.tp}/${p.pp}/${p.ep}/${p.cp}/${p.expertMapping}`;
+  };
+  return [
+    w.presetId ?? w.model.name, w.model.paramsB, w.model.activeParamsB, w.model.layers, w.model.hiddenSize,
+    inf.disaggregated ? 'pd' : 'aggregated', inf.weightPrecision ?? 'fp8', inf.kvPrecision ?? 'fp8',
+    inf.inputTokens, inf.outputTokens, inf.ttftSloMs, inf.tpotSloMs,
+    inf.disaggregated ? topology('prefill') : topology('aggregated'), inf.disaggregated ? topology('decode') : '',
+  ].join('|');
 }
 
 /** Effective topology for a serving stage. Stage overrides inherit the common topology. */
@@ -53,10 +122,22 @@ export function inferenceParallelismFor(
   return normalizeInferenceParallelism(stage === 'prefill' ? inference.prefillParallelism : inference.decodeParallelism, common);
 }
 
+/** Physical GPUs in the TP/EP worker group before PP/CP replication. */
+export function inferenceModelParallelGroupGpus(p: InferenceParallelism): number {
+  const n = normalizeInferenceParallelism(p);
+  return n.expertMapping === 'orthogonal' ? n.tp * n.ep : Math.max(n.tp, n.ep);
+}
+
+/** GPUs participating in one EP collective. */
+export function inferenceExpertCollectiveGpus(p: InferenceParallelism): number {
+  const n = normalizeInferenceParallelism(p);
+  return n.expertMapping === 'orthogonal' ? n.tp * n.ep : n.ep;
+}
+
 /** Physical GPUs in one replica. DP is represented by multiple replicas, not by this product. */
 export function inferenceReplicaGpus(p: InferenceParallelism): number {
   const n = normalizeInferenceParallelism(p);
-  return n.tp * n.pp * n.ep * n.cp;
+  return inferenceModelParallelGroupGpus(n) * n.pp * n.cp;
 }
 
 /** Smallest schedulable serving unit: one replica, or one prefill plus one decode replica for P/D disaggregation. */
@@ -85,8 +166,10 @@ function memoryAtTp(w: WorkloadBlueprint, stage: InferenceStage, topology: Infer
   const sharedWeightsGB = Math.min(totalWeightsGB, w.model.activeParamsB * weightBytes);
   const expertWeightsGB = Math.max(0, totalWeightsGB - sharedWeightsGB);
   const modelShard = Math.max(1, p.tp * p.pp);
-  const expertShard = w.model.moe ? Math.max(1, p.ep) : 1;
-  const weightGBPerGpu = WEIGHT_RUNTIME_FACTOR * (sharedWeightsGB / modelShard + expertWeightsGB / (modelShard * expertShard));
+  // The worker group collectively owns one copy of the expert weights. In shared mode TP/EP are two collective
+  // views of the same max(TP, EP) workers; in orthogonal mode they form a TP × EP grid.
+  const expertShard = w.model.moe ? Math.max(1, inferenceModelParallelGroupGpus(p) * p.pp) : modelShard;
+  const weightGBPerGpu = WEIGHT_RUNTIME_FACTOR * (sharedWeightsGB / modelShard + expertWeightsGB / expertShard);
 
   const heads = Math.max(1, Math.round(w.model.numHeads ?? w.model.hiddenSize / 128));
   const kvHeads = Math.max(1, Math.round(w.model.kvHeads ?? heads));
@@ -139,7 +222,7 @@ export function inferenceMemoryEstimate(
     ...current,
     fits: current.totalGBPerGpu <= usableHbmGB,
     minimumTp,
-    crossesScaleUp: minimumTp !== undefined && minimumTp * p.pp * p.ep * p.cp > Math.max(1, scaleUpDomain),
+    crossesScaleUp: minimumTp !== undefined && inferenceReplicaGpus({ ...p, tp: minimumTp }) > Math.max(1, scaleUpDomain),
     weightPrecision: inf.weightPrecision ?? 'fp8',
     kvPrecision: inf.kvPrecision ?? 'fp8',
   };

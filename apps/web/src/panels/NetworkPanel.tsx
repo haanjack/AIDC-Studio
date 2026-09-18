@@ -163,6 +163,7 @@ export function NetworkPanel() {
               </div>
             </div>
             <p className="hint" style={{ marginTop: 4 }}>{t('network.fabric.growthHint', { note: growthNote })}</p>
+            <p className="caption" style={{ margin: '3px 0 0' }}>{t(so.fabric.startsWith('ib-') ? 'network.fabric.switchCompatibilityIb' : 'network.fabric.switchCompatibilityEthernet')}</p>
           </Section>
 
           <Section title={t('network.aux.title')}>
@@ -382,6 +383,22 @@ export function NetworkPanel() {
                         busbw: fmtPct(traffic.physical.scaleUpBusbwFactor),
                         scaleOut: traffic.physical.scaleOutFabric ? t(`network.fabricName.${traffic.physical.scaleOutFabric}`) : t('network.traffic.pathScaleOutUnknown'),
                       })}</p>
+                      <p className="hint" style={{ margin: '3px 0 0' }}>{t('network.traffic.scaleOutPortAccounting', {
+                        nicPorts: fmtInt(traffic.physical.scaleOutNicPortsPerGpu),
+                        nicPort: fmtInt(traffic.physical.scaleOutNicPortGbps),
+                        nicRaw: fmt1(traffic.physical.scaleOutRawGBpsPerGpu),
+                        effective: fmt1(traffic.physical.scaleOutEffectiveGBpsPerGpu),
+                        switch: traffic.physical.scaleOutSwitchName ?? t('network.fabric.switch'),
+                        switchPort: fmtInt(traffic.physical.scaleOutSwitchPortGbps),
+                        switchRaw: fmt1(traffic.physical.scaleOutSwitchRawGBps),
+                        portUse: fmt2(traffic.physical.scaleOutSwitchPortsPerGpu),
+                      })}</p>
+                      {traffic.physical.scaleOutNicPortGbps < traffic.physical.scaleOutSwitchPortGbps && (
+                        <p className="caption" style={{ margin: '2px 0 0' }}>{t('network.traffic.scaleOutMixedSpeedWarning', {
+                          nicPort: fmtInt(traffic.physical.scaleOutNicPortGbps),
+                          switchPort: fmtInt(traffic.physical.scaleOutSwitchPortGbps),
+                        })}</p>
+                      )}
                       <p className="caption" style={{ margin: '2px 0 0' }}>{t('network.traffic.physicalEnvelopeHint')}</p>
                     </>
                   )}
@@ -496,11 +513,11 @@ export function NetworkPanel() {
                     <p className="caption">
                       {traffic.inference.disaggregated
                         ? t('network.inf.topologyPd', {
-                          ptp: traffic.inference.prefillParallelism.tp, ppp: traffic.inference.prefillParallelism.pp, pep: traffic.inference.prefillParallelism.ep, pcp: traffic.inference.prefillParallelism.cp, pg: traffic.inference.prefillInstanceGpus ?? 0,
-                          dtp: traffic.inference.decodeParallelism.tp, dpp: traffic.inference.decodeParallelism.pp, dep: traffic.inference.decodeParallelism.ep, dcp: traffic.inference.decodeParallelism.cp, dg: traffic.inference.decodeInstanceGpus ?? 0,
+                          ptp: traffic.inference.prefillParallelism.tp, ppp: traffic.inference.prefillParallelism.pp, pdp: traffic.inference.prefillReplicas ?? traffic.inference.prefillParallelism.dp ?? '–', pep: traffic.inference.prefillParallelism.ep, pcp: traffic.inference.prefillParallelism.cp, pg: traffic.inference.prefillInstanceGpus ?? 0,
+                          dtp: traffic.inference.decodeParallelism.tp, dpp: traffic.inference.decodeParallelism.pp, ddp: traffic.inference.decodeReplicas ?? traffic.inference.decodeParallelism.dp ?? '–', dep: traffic.inference.decodeParallelism.ep, dcp: traffic.inference.decodeParallelism.cp, dg: traffic.inference.decodeInstanceGpus ?? 0,
                         })
                         : t('network.inf.topologyAggregated', {
-                          tp: traffic.inference.decodeParallelism.tp, pp: traffic.inference.decodeParallelism.pp, ep: traffic.inference.decodeParallelism.ep, cp: traffic.inference.decodeParallelism.cp, g: traffic.inference.decodeInstanceGpus ?? 0,
+                          tp: traffic.inference.decodeParallelism.tp, pp: traffic.inference.decodeParallelism.pp, dp: traffic.inference.decodeReplicas ?? traffic.inference.decodeParallelism.dp ?? '–', ep: traffic.inference.decodeParallelism.ep, cp: traffic.inference.decodeParallelism.cp, g: traffic.inference.decodeInstanceGpus ?? 0,
                         })}
                     </p>
                   )}

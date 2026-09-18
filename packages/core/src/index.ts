@@ -46,6 +46,8 @@ export * from './workload/presets.ts';
 export * from './workload/calibration.ts';
 export * from './workload/shares.ts';
 export * from './workload/inference.ts';
+export * from './workload/inferencex.ts';
+export * from './workload/inferencexRegression.ts';
 export * from './catalog/images.ts';
 export * from './catalog/assetManifest.ts';
 export * from './catalog/flops.ts';

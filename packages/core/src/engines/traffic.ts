@@ -4,7 +4,7 @@ import { buildContext, clamp, type Ctx } from './context.ts';
 import { ETA_HOST_SOURCE } from './eta.ts';
 import { analyzeNetworkCtx, etaFor, type NetworkResult } from './network.ts';
 import { l2l3Verdict } from './radix.ts';
-import { inferenceParallelismFor, inferenceReplicaGpus } from '../workload/inference.ts';
+import { inferenceExpertCollectiveGpus, inferenceParallelismFor, inferencePromptTokens, inferenceReplicaGpus } from '../workload/inference.ts';
 
 /**
  * Deterministic workload → network traffic engine (stream S2, PROPOSAL-v2 §3.3, docs/research/network-sim.md §2–§3 + review C1/C2/C6/C7;
@@ -71,6 +71,12 @@ export interface TrafficGpu {
   scaleUpKind?: ComputeSpec['scaleUp']['kind'];
   scaleUpName?: string;
   scaleOutFabric?: Project['network']['scaleOut']['fabric'];
+  /** Physical NIC/switch port accounting used to make endpoint and switch capacity explicit in the UI. */
+  scaleOutNicPortsPerGpu?: number;
+  scaleOutNicPortGbps?: number;
+  scaleOutSwitchName?: string;
+  scaleOutSwitchPortGbps?: number;
+  scaleOutSwitchPortsPerGpu?: number;
 }
 
 export interface TrafficFabric {
@@ -211,6 +217,10 @@ const SCALE_UP_NAMES: Record<ComputeSpec['scaleUp']['kind'], string> = {
 
 function physicalEnvelope(gpu: TrafficGpu, suCap: number, nicCap: number): TrafficPhysicalEnvelope {
   const scaleUpKind = gpu.scaleUpKind ?? 'none';
+  const nicPorts = Math.max(1, gpu.scaleOutNicPortsPerGpu ?? 1);
+  const nicPortGbps = Math.max(0, gpu.scaleOutNicPortGbps ?? gpu.nicGbps / nicPorts);
+  const switchPortGbps = Math.max(0, gpu.scaleOutSwitchPortGbps ?? nicPortGbps);
+  const switchPortsPerGpu = Math.max(0, gpu.scaleOutSwitchPortsPerGpu ?? (switchPortGbps > 0 ? (nicPorts * nicPortGbps) / switchPortGbps : nicPorts));
   return {
     ...(gpu.platformId ? { platformId: gpu.platformId } : {}),
     ...(gpu.platformName ? { platformName: gpu.platformName } : {}),
@@ -222,6 +232,13 @@ function physicalEnvelope(gpu: TrafficGpu, suCap: number, nicCap: number): Traff
     scaleUpEffectiveGBpsPerGpu: suCap / GB,
     scaleUpBusbwFactor: gpu.scaleUpBusbw ?? SCALE_UP_BUSBW,
     scaleOutEffectiveGBpsPerGpu: nicCap / GB,
+    scaleOutNicPortsPerGpu: nicPorts,
+    scaleOutNicPortGbps: nicPortGbps,
+    scaleOutRawGBpsPerGpu: (nicPorts * nicPortGbps) / 8,
+    ...(gpu.scaleOutSwitchName ? { scaleOutSwitchName: gpu.scaleOutSwitchName } : {}),
+    scaleOutSwitchPortGbps: switchPortGbps,
+    scaleOutSwitchRawGBps: switchPortGbps / 8,
+    scaleOutSwitchPortsPerGpu: switchPortsPerGpu,
     ...(gpu.scaleOutFabric ? { scaleOutFabric: gpu.scaleOutFabric } : {}),
   };
 }
@@ -495,6 +512,7 @@ export function computeTraffic(spec: TrafficSpec): TrafficReport {
   let inference: TrafficReport['inference'];
   if (spec.inference) {
     const inf = spec.inference.params;
+    const prompt = inferencePromptTokens(inf);
     const im = spec.inference.model;
     const bKv = PRECISION_BYTES[inf.kvPrecision ?? 'fp8'] ?? 1;
     const iL = Math.max(1, im.layers);
@@ -509,7 +527,7 @@ export function computeTraffic(spec: TrafficSpec): TrafficReport {
     const iKvSeq = kvSeqEffective(Math.max(1, inf.inputTokens), im.attentionWindow, im.globalLayerInterval);
     const kvBytesPerToken = mla ? iL * iKvLayerFraction * (mla.dLatent + mla.dRope) * bKv : (2 * iL * iKvLayerFraction * iKv * iHeadDim * bKv * iKvSeq) / Math.max(1, inf.inputTokens);
     // DistServe §3.3: R_KV = rps × prompt tokens × KV bytes/token
-    const kvTransferGbps = (inf.requestsPerSec * inf.inputTokens * kvBytesPerToken * 8) / GB;
+    const kvTransferGbps = (inf.requestsPerSec * prompt.transfer * kvBytesPerToken * 8) / GB;
     // DeepSeek insights §2.3.2: (1 B + 2 B) × 32 tokens × k experts × h per layer, dispatch + combine, over the interconnect
     const iMoe = im.moe;
     const iTop = iMoe ? Math.max(1, iMoe.topK) : 0;
@@ -517,13 +535,16 @@ export function computeTraffic(spec: TrafficSpec): TrafficReport {
     const iDecode = inferenceParallelismFor(inf, 'decode');
     const iPrefillGpus = inferenceReplicaGpus(iPrefill);
     const iDecodeGpus = inferenceReplicaGpus(iDecode);
-    const iEpInDomain = iDecode.tp * iDecode.ep <= U;
+    const iEpInDomain = inferenceExpertCollectiveGpus(iDecode) <= U;
     const a2aBw = iEpInDomain ? suCap : nicCap;
     const epDecodeTokPerSPerUser = iMoe && iDecode.ep > 1 ? a2aBw / (Math.max(1, moeLayerCount(iL, iMoe)) * 2 * iTop * iH * 3 * ((iDecode.ep - 1) / iDecode.ep)) : Number.POSITIVE_INFINITY;
-    const pdGbps = inf.disaggregated ? kvTransferGbps : 0;
+    const pdGbps = kvTransferGbps;
     inference = {
       kvBytesPerToken,
       kvTransferGbps: pdGbps,
+      remoteCacheTransferGbps: (inf.requestsPerSec * prompt.remoteCached * kvBytesPerToken * 8) / GB,
+      gpuCacheHitRate: prompt.input > 0 ? prompt.gpuCached / prompt.input : 0,
+      remoteCacheHitRate: prompt.input > 0 ? prompt.remoteCached / prompt.input : 0,
       epDecodeTokPerSPerUser,
       attention: mla ? 'mla' : 'gqa',
       disaggregated: inf.disaggregated,
@@ -532,7 +553,7 @@ export function computeTraffic(spec: TrafficSpec): TrafficReport {
       prefillInstanceGpus: iPrefillGpus,
       decodeInstanceGpus: iDecodeGpus,
     };
-    notes.push(`Inference (${im.name}): prefill TP${iPrefill.tp}·PP${iPrefill.pp}·EP${iPrefill.ep}·CP${iPrefill.cp} (${iPrefillGpus} GPUs), decode TP${iDecode.tp}·PP${iDecode.pp}·EP${iDecode.ep}·CP${iDecode.cp} (${iDecodeGpus} GPUs); KV ${(kvBytesPerToken / 1024).toFixed(1)} KB/token (${mla ? 'MLA' : `GQA, d_head ${iHeadDim}${im.attentionWindow ? `, window ${im.attentionWindow} with 1 global layer in ${im.globalLayerInterval ?? '∞'}` : ''}`}, ${inf.kvPrecision ?? 'fp8'}); ${inf.disaggregated ? `P/D KV transfer ${pdGbps.toFixed(1)} Gb/s aggregate at ${inf.requestsPerSec} req/s × ${inf.inputTokens} prompt tokens` : 'aggregated serving has no P/D KV transfer'}${iMoe && iDecode.ep > 1 ? `; EP${iDecode.ep} all-to-all decode ceiling ≈ ${epDecodeTokPerSPerUser.toFixed(0)} tok/s/user on ${iEpInDomain ? 'the scale-up domain' : 'the NIC'}` : ''}.`);
+    notes.push(`Inference (${im.name}): prefill TP${iPrefill.tp}·PP${iPrefill.pp}·EP${iPrefill.ep}·CP${iPrefill.cp} (${iPrefillGpus} GPUs), decode TP${iDecode.tp}·PP${iDecode.pp}·EP${iDecode.ep}·CP${iDecode.cp} (${iDecodeGpus} GPUs); KV ${(kvBytesPerToken / 1024).toFixed(1)} KB/token (${mla ? 'MLA' : `GQA, d_head ${iHeadDim}${im.attentionWindow ? `, window ${im.attentionWindow} with 1 global layer in ${im.globalLayerInterval ?? '∞'}` : ''}`}, ${inf.kvPrecision ?? 'fp8'}); ${prompt.cached > 0 ? `${prompt.mode === 'trace' ? 'trace-calibrated cache' : 'warm prefix'} ${prompt.cached.toFixed(0)}/${prompt.input} tokens; ` : ''}${prompt.transfer > 0 ? `KV movement ${pdGbps.toFixed(1)} Gb/s aggregate (${prompt.remoteCached.toFixed(0)} remote-cache${inf.disaggregated ? ` + ${prompt.uncached.toFixed(0)} P/D` : ''} tokens/request)` : 'no remote/P-D KV movement'}${iMoe && iDecode.ep > 1 ? `; EP${iDecode.ep} all-to-all decode ceiling ≈ ${epDecodeTokPerSPerUser.toFixed(0)} tok/s/user on ${iEpInDomain ? 'the scale-up domain' : 'the NIC'}` : ''}.`);
   }
 
   // ── notes ──
@@ -655,7 +676,8 @@ function buildTrafficEnvelope(input: TrafficInput, allocationMultiple: number, p
   const notes: string[] = [];
   if (plan.clusterGpus !== undefined && plan.clusterGpus < ctx.gpus) notes.push(`${jobLabel} sized inside cluster '${plan.clusterName ?? plan.clusterId}' (${plan.clusterGpus} of ${ctx.gpus} GPUs) — ${jobLabel === 'Training job' ? 'collectives' : 'traffic'} never cross clusters.`);
   const portsPerGpu = Math.max(1, c.scaleOutPortsPerGpu);
-  const lanes = Math.max(1, Math.round(c.scaleOutPortGbps / (plan.sw.switch?.portGbps ?? c.scaleOutPortGbps)));
+  const switchPortGbps = plan.sw.switch?.portGbps ?? c.scaleOutPortGbps;
+  const lanes = Math.max(1, Math.round(c.scaleOutPortGbps / switchPortGbps));
   // GPUs per leaf domain = average GPUs of the pods that carry scale-out endpoints
   let podGpus = 0;
   let pods = 0;
@@ -687,6 +709,11 @@ function buildTrafficEnvelope(input: TrafficInput, allocationMultiple: number, p
       scaleUpKind: c.scaleUp.kind,
       scaleUpName: c.scaleUp.family ?? SCALE_UP_NAMES[c.scaleUp.kind],
       scaleOutFabric: so.fabric,
+      scaleOutNicPortsPerGpu: portsPerGpu,
+      scaleOutNicPortGbps: c.scaleOutPortGbps,
+      scaleOutSwitchName: plan.sw.name,
+      scaleOutSwitchPortGbps: switchPortGbps,
+      scaleOutSwitchPortsPerGpu: (portsPerGpu * c.scaleOutPortGbps) / Math.max(1, switchPortGbps),
     },
     fabric: {
       kind: plan.kind,
@@ -729,8 +756,29 @@ export function computeInferenceTraffic(spec: InferenceTrafficSpec): TrafficRepo
   const prefillGpus = inferenceReplicaGpus(prefill);
   const decodeGpus = inferenceReplicaGpus(decode);
   const deploymentGpus = inf.disaggregated ? prefillGpus + decodeGpus : prefillGpus;
-  const allocatedGpus = Math.max(deploymentGpus, Math.floor(spec.gpus / deploymentGpus) * deploymentGpus);
-  const replicas = Math.max(1, Math.floor(allocatedGpus / deploymentGpus));
+  const requestedPrefillGpus = (prefill.dp ?? 0) * prefillGpus;
+  const requestedDecodeGpus = (decode.dp ?? 0) * decodeGpus;
+  const requestedDeploymentGpus = inf.disaggregated ? requestedPrefillGpus + requestedDecodeGpus : requestedPrefillGpus;
+  const fixedDeploymentFits = requestedDeploymentGpus > 0 && requestedDeploymentGpus <= spec.gpus
+    && (!inf.disaggregated || (!!prefill.dp && !!decode.dp));
+  const pairedAllocatedGpus = Math.max(deploymentGpus, Math.floor(spec.gpus / deploymentGpus) * deploymentGpus);
+  const replicas = Math.max(1, Math.floor(pairedAllocatedGpus / deploymentGpus));
+  let prefillReplicas = fixedDeploymentFits ? prefill.dp! : replicas;
+  let decodeReplicas = fixedDeploymentFits ? (inf.disaggregated ? decode.dp! : prefill.dp!) : replicas;
+  if (inf.disaggregated && !fixedDeploymentFits) {
+    // A stage-specific DP remains meaningful even when the other stage is automatic. Fill the remainder with
+    // whole replicas for the automatic stage so the traffic view and workload result describe the same pools.
+    if (prefill.dp && prefill.dp * prefillGpus + decodeGpus <= spec.gpus && !decode.dp) {
+      prefillReplicas = prefill.dp;
+      decodeReplicas = Math.max(1, Math.floor((spec.gpus - prefillReplicas * prefillGpus) / decodeGpus));
+    } else if (decode.dp && decode.dp * decodeGpus + prefillGpus <= spec.gpus && !prefill.dp) {
+      decodeReplicas = decode.dp;
+      prefillReplicas = Math.max(1, Math.floor((spec.gpus - decodeReplicas * decodeGpus) / prefillGpus));
+    }
+  }
+  const allocatedGpus = inf.disaggregated
+    ? prefillReplicas * prefillGpus + decodeReplicas * decodeGpus
+    : prefillReplicas * prefillGpus;
   const L = Math.max(1, model.layers);
   const h = Math.max(1, model.hiddenSize);
   const nHeads = Math.max(1, Math.round(model.numHeads ?? h / 128));
@@ -757,7 +805,7 @@ export function computeInferenceTraffic(spec: InferenceTrafficSpec): TrafficRepo
   const routeCollective = (group: Exclude<ServingGroup, 'dp' | 'pd'>, bytesPerSecond: number, p: ReturnType<typeof inferenceParallelismFor>) => {
     if (!(bytesPerSecond > 0)) return;
     const bt: Record<Tier, number> = { 'scale-up': 0, leaf: 0, spine: 0, core: 0 };
-    const groupGpus = group === 'tp' ? p.tp : group === 'cp' ? p.tp * p.cp : group === 'pp' ? p.tp * p.cp * p.pp : p.tp * p.ep;
+    const groupGpus = group === 'tp' ? p.tp : group === 'cp' ? p.tp * p.cp : group === 'pp' ? inferenceReplicaGpus({ ...p, pp: p.pp, ep: 1 }) : inferenceExpertCollectiveGpus(p);
     if (groupGpus <= U) bt['scale-up'] = bytesPerSecond;
     else if (group === 'ep') {
       const domains = Math.ceil(groupGpus / U);
@@ -773,8 +821,8 @@ export function computeInferenceTraffic(spec: InferenceTrafficSpec): TrafficRepo
     }
     add(group, bytesPerSecond, bt);
   };
-  const addStage = (name: 'prefill' | 'decode', p: ReturnType<typeof inferenceParallelismFor>, tokensPerSecond: number) => {
-    const rate = tokensPerSecond / replicas;
+  const addStage = (name: 'prefill' | 'decode', p: ReturnType<typeof inferenceParallelismFor>, tokensPerSecond: number, stageReplicas: number) => {
+    const rate = tokensPerSecond / Math.max(1, stageReplicas);
     const lStage = L / p.pp;
     const tpBps = p.tp > 1 ? rate * lStage * 4 * h * B_ACT * ((p.tp - 1) / p.tp) : 0;
     const cpBps = p.cp > 1 ? rate * lStage * 2 * nKv * dHead * kvB * ((p.cp - 1) / p.cp) : 0;
@@ -787,20 +835,21 @@ export function computeInferenceTraffic(spec: InferenceTrafficSpec): TrafficRepo
     if (p.tp > U) notes.push(`${name} TP${p.tp} exceeds the scale-up domain (${U}); its latency-sensitive all-reduce reaches the scale-out fabric.`);
   };
 
-  const prefillTokensPerSec = inf.requestsPerSec * inf.inputTokens;
+  const prompt = inferencePromptTokens(inf);
+  const prefillTokensPerSec = inf.requestsPerSec * prompt.uncached;
   const decodeTokensPerSec = inf.requestsPerSec * inf.outputTokens;
-  addStage('prefill', prefill, prefillTokensPerSec);
-  addStage('decode', decode, decodeTokensPerSec);
+  addStage('prefill', prefill, prefillTokensPerSec, prefillReplicas);
+  addStage('decode', decode, decodeTokensPerSec, decodeReplicas);
 
   const kvSeq = kvSeqEffective(Math.max(1, inf.inputTokens), model.attentionWindow, model.globalLayerInterval);
   const kvLayerFraction = clamp(model.kvCacheLayerFraction ?? 1, 0, 1);
   const kvBytesPerToken = model.mla
     ? L * kvLayerFraction * (model.mla.dLatent + model.mla.dRope) * kvB
     : (2 * L * kvLayerFraction * nKv * dHead * kvB * kvSeq) / Math.max(1, inf.inputTokens);
-  const kvTransferBps = inf.disaggregated ? inf.requestsPerSec * inf.inputTokens * kvBytesPerToken : 0;
+  const kvTransferBps = inf.requestsPerSec * prompt.transfer * kvBytesPerToken;
   if (kvTransferBps > 0) {
-    const prefillPoolGpus = replicas * prefillGpus;
-    const decodePoolGpus = replicas * decodeGpus;
+    const prefillPoolGpus = prefillReplicas * prefillGpus;
+    const decodePoolGpus = decodeReplicas * decodeGpus;
     const perEndpointBps = kvTransferBps / Math.max(1, Math.min(prefillPoolGpus, decodePoolGpus));
     const bt: Record<Tier, number> = { 'scale-up': 0, leaf: perEndpointBps, spine: 0, core: 0 };
     const endpointSpan = Math.max(prefillPoolGpus, decodePoolGpus);
@@ -850,15 +899,15 @@ export function computeInferenceTraffic(spec: InferenceTrafficSpec): TrafficRepo
   const lbEff = idealS > 0 ? idealS / actualS : 1;
   const commEfficiencyEffective = clamp(lbEff * congestion * (fabric.speedFactor ?? 1) * (hasCore ? 0.98 : 1), 0.05, 1);
   const l2l3 = l2l3Verdict({ endpoints: allocatedGpus, switches: fabric.leaves, k: fabric.k, multiTenant: fabric.multiTenant, planes: fabric.planes });
-  const iEpInDomain = decode.tp * decode.ep <= U;
+  const iEpInDomain = inferenceExpertCollectiveGpus(decode) <= U;
   const a2aBw = iEpInDomain ? suCap : nicCap;
   const epDecodeTokPerSPerUser = moe && decode.ep > 1 ? a2aBw / (Math.max(1, moeLayerCount(L, moe)) * 2 * kTop * h * 3 * ((decode.ep - 1) / decode.ep)) : Number.POSITIVE_INFINITY;
   notes.unshift(
-    `Inference demand window: ${inf.requestsPerSec} req/s × (${inf.inputTokens} prefill + ${inf.outputTokens} decode tokens), spread across ${replicas} ${inf.disaggregated ? 'P/D deployment pairs' : 'aggregated replicas'} on ${allocatedGpus} layout GPUs.`,
+    `Inference demand window: ${inf.requestsPerSec} req/s × (${prompt.uncached} uncached prefill of ${inf.inputTokens} input + ${inf.outputTokens} decode tokens), spread across prefill DP${prefillReplicas}${inf.disaggregated ? ` and decode DP${decodeReplicas}` : ''} on ${allocatedGpus} layout GPUs.`,
     `Topology: prefill TP${prefill.tp}·PP${prefill.pp}·EP${prefill.ep}·CP${prefill.cp} (${prefillGpus} GPUs/instance); decode TP${decode.tp}·PP${decode.pp}·EP${decode.ep}·CP${decode.cp} (${decodeGpus} GPUs/instance).`,
     `The physical envelope comes from the GPU racks placed in Layout: scale-up domain ${U}, ${gpu.nicGbps} Gb/s scale-out per GPU, η_host ${nicBusbw.toFixed(3)}, η_fabric ${eta.toFixed(3)}.`,
   );
-  if (inf.disaggregated) notes.push(`P/D KV transfer ${(kvTransferBps * 8 / GB).toFixed(1)} Gb/s aggregate; the tier load uses the busiest sharded endpoint across the prefill and decode pools.`);
+  if (kvTransferBps > 0) notes.push(`KV movement ${(kvTransferBps * 8 / GB).toFixed(1)} Gb/s aggregate (${prompt.remoteCached.toFixed(0)} remote-cache${inf.disaggregated ? ` + ${prompt.uncached.toFixed(0)} P/D` : ''} tokens/request); the tier load uses the busiest sharded endpoint.`);
   if (worst > 1) notes.push(`The requested inference rate exceeds the busiest tier by ×${worst.toFixed(2)}; latency SLOs require more replicas, more NIC bandwidth, or a topology change.`);
 
   return {
@@ -879,6 +928,9 @@ export function computeInferenceTraffic(spec: InferenceTrafficSpec): TrafficRepo
     inference: {
       kvBytesPerToken,
       kvTransferGbps: kvTransferBps * 8 / GB,
+      remoteCacheTransferGbps: inf.requestsPerSec * prompt.remoteCached * kvBytesPerToken * 8 / GB,
+      gpuCacheHitRate: prompt.input > 0 ? prompt.gpuCached / prompt.input : 0,
+      remoteCacheHitRate: prompt.input > 0 ? prompt.remoteCached / prompt.input : 0,
       epDecodeTokPerSPerUser,
       attention: model.mla ? 'mla' : 'gqa',
       requestsPerSec: inf.requestsPerSec,
@@ -886,6 +938,8 @@ export function computeInferenceTraffic(spec: InferenceTrafficSpec): TrafficRepo
       decodeTokensPerSec,
       allocatedGpus,
       replicas,
+      prefillReplicas,
+      decodeReplicas,
       disaggregated: inf.disaggregated,
       prefillParallelism: prefill,
       decodeParallelism: decode,

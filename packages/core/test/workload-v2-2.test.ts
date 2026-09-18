@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   MLPERF_NOTICE,
   acceleratorPeakSource, analyzeProject, applyModelPreset, BENCHMARKS, calibrateFromBenchmark, calibrationRecord, createNvidiaReferenceProject, fillRemainder,
-  findBenchmark, findCatalogItem, findModelPreset, gpuShareTotal, inferenceMemoryEstimate, MODEL_PRESETS, normalizeShares, peakFlopsFor, presetModelFields,
+  findBenchmark, findCatalogItem, findModelPreset, gpuShareTotal, inferenceMemoryEstimate, inferenceParallelismFor, MODEL_PRESETS, normalizeShares, peakFlopsFor, presetModelFields,
   modelParallelGroupGpus, presetModifiedFields, scaleWarning, shareIssues, shareState, takeShare, takeShareDetailed, trainingFlopsPerToken,
   type WorkloadBlueprint,
 } from '../src/index.ts';
@@ -49,6 +49,44 @@ describe('inference memory-first TP sizing', () => {
     w.model.numHeads = 40;
     w.model.kvHeads = 8;
     expect(inferenceMemoryEstimate(w, 'aggregated', { tp: 1, pp: 1, ep: 1, cp: 1 }, 80, 8)).toMatchObject({ minimumTp: 5 });
+  });
+
+  it('sizes Kimi K2 KV from the actual request, not the model context limit', () => {
+    const preset = findModelPreset('kimi-k2')!;
+    const w: WorkloadBlueprint = {
+      id: 'kimi-memory', name: 'Kimi K2 serving', kind: 'llm-inference', gpuShare: 1, durationDays: 1,
+      presetId: preset.id,
+      model: applyModelPreset({ name: '', paramsB: 0, activeParamsB: 0, layers: 0, hiddenSize: 0, seqLen: 131_072 }, preset),
+      inference: {
+        requestsPerSec: 1000, inputTokens: 5000, outputTokens: 1024, ttftSloMs: 600, tpotSloMs: 40,
+        disaggregated: false, weightPrecision: 'fp4', kvPrecision: 'fp4', parallelism: { tp: 4, pp: 1, ep: 1, cp: 1 },
+      },
+    };
+    const request = inferenceMemoryEstimate(w, 'aggregated', w.inference!.parallelism!, 288, 8)!;
+    expect(request.tokenResidency).toBe(6024);
+    expect(request.kvGBPerGpu).toBeCloseTo(0.026457408, 9);
+    expect(request.weightGBPerGpu).toBeCloseTo(150, 9);
+    w.model.seqLen = 262_144;
+    expect(inferenceMemoryEstimate(w, 'aggregated', w.inference!.parallelism!, 288, 8)!.kvGBPerGpu).toBeCloseTo(request.kvGBPerGpu, 12);
+    w.inference!.inputTokens = 130_048;
+    expect(inferenceMemoryEstimate(w, 'aggregated', w.inference!.parallelism!, 288, 8)!.kvGBPerGpu).toBeCloseTo(0.575668224, 9);
+  });
+
+  it('keeps warm-prefix KV resident while removing only repeated prefill work', () => {
+    const w = inference('fp8');
+    const topology = { tp: 2, pp: 1, ep: 1, cp: 1 };
+    const cold = inferenceMemoryEstimate(w, 'aggregated', topology, 80, 8)!;
+    w.inference!.cachedPrefixTokens = 3072;
+    const warm = inferenceMemoryEstimate(w, 'aggregated', topology, 80, 8)!;
+    expect(warm.tokenResidency).toBe(cold.tokenResidency);
+    expect(warm.kvGBPerGpu).toBe(cold.kvGBPerGpu);
+  });
+
+  it('warns when the actual inference request exceeds the model context limit', () => {
+    const { project } = createNvidiaReferenceProject();
+    const inf = project.workloads.find((w) => w.inference)!;
+    inf.model.seqLen = inf.inference!.inputTokens + inf.inference!.outputTokens - 1;
+    expect(analyzeProject(project).issues.map((issue) => issue.id)).toContain(`workload-inference-context-${inf.id}`);
   });
 });
 
@@ -271,10 +309,45 @@ describe('benchmark calibration', () => {
     const prefillReplicas = res.details!.prefillReplicas as number;
     const demand = inf.inference!.requestsPerSec * inf.inference!.outputTokens;
     expect(res.gpusRequired).toBe(prefillReplicas * prefillGpus + Math.max(1, Math.ceil(demand / (3481 * decodeGpus))) * decodeGpus);
+    expect(res.requestedOutputTokensPerSec).toBe(demand);
+    expect(res.outputTokensPerSec).toBeCloseTo(res.servedRequestsPerSec! * inf.inference!.outputTokens, 9);
+    expect(res.totalTokensPerSec).toBeCloseTo(res.servedRequestsPerSec! * (inf.inference!.inputTokens + inf.inference!.outputTokens), 9);
+    expect(res.computedTokensPerSec).toBe(res.totalTokensPerSec);
+    expect(res.outputCapacityTokensPerSec).toBeCloseTo(res.maxRequestsPerSec! * inf.inference!.outputTokens, 9);
+    expect(res.details!.calibratedOutputTokensPerSecPerGpu).toBeCloseTo(3481, 6);
     // interactivity above the row's floor is warned
     const strict = structuredClone(inf);
     strict.inference!.tpotSloMs = 10;
     expect(calibrateFromBenchmark(strict, row, gb300).warnings.map((w) => w.code)).toContain('interactivity');
+  });
+
+  it('reports logical and newly computed throughput separately for a warm prefix', () => {
+    const { project } = createNvidiaReferenceProject();
+    const inf = project.workloads.find((w) => w.inference)!;
+    inf.inference!.cachedPrefixTokens = Math.floor(inf.inference!.inputTokens / 2);
+    const res = analyzeProject(project).workloads.find((w) => w.workloadId === inf.id)!;
+    const served = res.servedRequestsPerSec!;
+    expect(res.totalTokensPerSec).toBeCloseTo(served * (inf.inference!.inputTokens + inf.inference!.outputTokens), 9);
+    expect(res.computedTokensPerSec).toBeCloseTo(served * (inf.inference!.inputTokens - inf.inference!.cachedPrefixTokens! + inf.inference!.outputTokens), 9);
+    expect(res.computedTokensPerSec).toBeLessThan(res.totalTokensPerSec!);
+  });
+
+  it('uses a trace cache calibration for prefill while keeping the full request resident', () => {
+    const { project } = createNvidiaReferenceProject();
+    const inf = project.workloads.find((w) => w.inference)!;
+    inf.inference!.prefixCacheTrace = {
+      benchmarkId: 'agentx-test', source: 'test trace', accelerator: 'test GPU',
+      gpuHitRate: 0.4, cpuHitRate: 0.2, externalHitRate: 0.3,
+    };
+    const before = inferenceMemoryEstimate(inf, 'aggregated', inferenceParallelismFor(inf.inference!, 'aggregated'), 288, 8)!;
+    const res = analyzeProject(project).workloads.find((w) => w.workloadId === inf.id)!;
+    const served = res.servedRequestsPerSec!;
+    expect(res.details).toMatchObject({ cacheMode: 'trace' });
+    expect(res.details!.gpuCachedPrefixTokens).toBeCloseTo(inf.inference!.inputTokens * 0.4, 9);
+    // CPU/external can overlap, so the larger 0.3 rate is used instead of summing both.
+    expect(res.details!.remoteCachedPrefixTokens).toBeCloseTo(inf.inference!.inputTokens * 0.3, 9);
+    expect(res.computedTokensPerSec).toBeCloseTo(served * (inf.inference!.inputTokens * 0.3 + inf.inference!.outputTokens), 9);
+    expect(inferenceMemoryEstimate(inf, 'aggregated', inferenceParallelismFor(inf.inference!, 'aggregated'), 288, 8)!.kvGBPerGpu).toBe(before.kvGBPerGpu);
   });
 });
 
@@ -287,16 +360,17 @@ describe('inference parallelism and P/D disaggregation', () => {
     inf.inference = {
       ...inf.inference!,
       disaggregated: true,
+      weightPrecision: 'fp4',
       parallelism: { tp: 2, pp: 1, ep: 1, cp: 1 },
       prefillParallelism: { tp: 2, pp: 1, ep: 2, cp: 2 },
       decodeParallelism: { tp: 4, pp: 1, ep: 2, cp: 1 },
     };
-    expect(modelParallelGroupGpus(inf)).toBe(16); // 8-GPU prefill + 8-GPU decode
+    expect(modelParallelGroupGpus(inf)).toBe(8); // shared TP/EP workers: 4-GPU prefill + 4-GPU decode
     const a = analyzeProject({ ...project, workloads: [inf] });
     const r = a.workloads[0];
     expect(r.details).toMatchObject({
-      prefillInstanceGpus: 8,
-      decodeInstanceGpus: 8,
+      prefillInstanceGpus: 4,
+      decodeInstanceGpus: 4,
       prefillTp: 2,
       prefillEp: 2,
       prefillCp: 2,
@@ -304,8 +378,63 @@ describe('inference parallelism and P/D disaggregation', () => {
       decodeEp: 2,
       decodeCp: 1,
     });
-    expect(r.gpusRequired).toBe((r.details!.prefillReplicas as number) * 8 + (r.details!.decodeReplicas as number) * 8);
+    expect(r.gpusRequired).toBe((r.details!.prefillReplicas as number) * 4 + (r.details!.decodeReplicas as number) * 4);
     expect(r.notesEn?.some((n) => n.includes('P/D topology'))).toBe(true);
+
+    inf.inference!.prefillParallelism!.expertMapping = 'orthogonal';
+    inf.inference!.decodeParallelism!.expertMapping = 'orthogonal';
+    expect(modelParallelGroupGpus(inf)).toBe(16); // explicit TP × EP grids restore the 8 + 8 GPU layout
+  });
+
+  it('uses independently configured prefill and decode DP pools while preserving demand sizing', () => {
+    const { project } = createNvidiaReferenceProject();
+    const inf = structuredClone(project.workloads.find((w) => w.kind === 'llm-inference')!);
+    inf.model = applyModelPreset(inf.model, findModelPreset('deepseek-r1')!);
+    inf.presetId = 'deepseek-r1';
+    inf.gpuShare = 1;
+    inf.inference = {
+      ...inf.inference!,
+      requestsPerSec: 1,
+      disaggregated: true,
+      prefillParallelism: { tp: 4, pp: 1, ep: 2, cp: 1, dp: 2 },
+      decodeParallelism: { tp: 4, pp: 1, ep: 2, cp: 1, dp: 3 },
+    };
+    const r = analyzeProject({ ...project, workloads: [inf] }).workloads[0];
+    expect(r.details).toMatchObject({
+      prefillInstanceGpus: 4,
+      decodeInstanceGpus: 4,
+      prefillReplicas: 2,
+      decodeReplicas: 3,
+      configuredPrefillDp: 2,
+      configuredDecodeDp: 3,
+      placedPoolGpus: 20,
+    });
+    expect(r.maxRequestsPerSec).toBeGreaterThan(0);
+  });
+
+  it('does not apply a static inference calibration from another model preset', () => {
+    const { project } = createNvidiaReferenceProject();
+    const inf = structuredClone(project.workloads.find((w) => w.kind === 'llm-inference')!);
+    const kimi = findModelPreset('kimi-k2.5')!;
+    inf.model = applyModelPreset(inf.model, kimi);
+    inf.presetId = kimi.id;
+    inf.gpuShare = 1;
+    inf.inference!.weightPrecision = 'fp4';
+    inf.calibration = { mode: 'inference', tokensPerSecPerGpu: 3481, source: 'stale DeepSeek result', benchmarkId: 'mlperf-i60-dsr1-interactive-gb300-72' };
+    const r = analyzeProject({ ...project, workloads: [inf] }).workloads[0];
+    expect(r.details).toMatchObject({ calibrationApplied: 0 });
+    expect(r.details?.calibratedOutputTokensPerSecPerGpu).toBeUndefined();
+    expect(r.notesEn?.some((note) => note.includes('does not match the current model'))).toBe(true);
+  });
+
+  it('does not silently reuse a legacy unbound InferenceX calibration', () => {
+    const { project } = createNvidiaReferenceProject();
+    const inf = structuredClone(project.workloads.find((w) => w.kind === 'llm-inference')!);
+    inf.gpuShare = 1;
+    inf.calibration = { mode: 'inference', tokensPerSecPerGpu: 3481, source: 'legacy live row', benchmarkId: 'ix-single-turn-old-row' };
+    const r = analyzeProject({ ...project, workloads: [inf] }).workloads[0];
+    expect(r.details).toMatchObject({ calibrationApplied: 0 });
+    expect(r.details?.calibratedOutputTokensPerSecPerGpu).toBeUndefined();
   });
 
   it('rejects a topology whose weight shard cannot fit in HBM', () => {

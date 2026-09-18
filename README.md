@@ -42,6 +42,7 @@ The application is web-first and independent of the host operating system or GPU
 - [Product guide](docs/PRODUCT.md) — users, workflow, capabilities, modelling boundaries, and deliverables
 - [Architecture](docs/ARCHITECTURE.md) — domain model, engines, geometry, UI/server structure, and design principles
 - [Standalone distribution](docs/STANDALONE.md) — single-binary packaging recommendation
+- [Inference benchmarks](docs/INFERENCE-BENCHMARKS.md) — InferenceX integration, matching rules, calibration boundaries, and prefix-cache semantics
 - [Export schema](packages/core/src/export/SCHEMA.md)
 - [Thermal solver](packages/thermal/README.md)
 - [Asset pipeline](tools/asset-pipeline/README.md)
@@ -67,7 +68,7 @@ engines/unreal        Unreal Engine 5 Python importer
 1. **Select standards and platforms** — Choose a standards profile, deployment-unit template, compatible compute platform, containment, CDU, room-cooling equipment, and network fabric.
 2. **Define the site** — Enter climate, power cost, carbon factors, utility feeders, energisation dates, hall envelopes, floor loading, IT-power budgets, and expansion strategy.
 3. **Generate and fit the layout** — Place compute and service rows, cooling equipment, electrical rooms, reservations, trays, busways, pipes, and network cores. Fit or right-size the hall in both directions.
-4. **Model workloads against the placed cluster** — The dominant placed accelerator supplies the physical HBM, usable-memory limit, scale-up domain, compute and bandwidth envelope. Estimate training or inference throughput, communication overhead, MFU, goodput, duration, replica demand and power profile. Inference first derives a memory-fit TP floor from weight and one-sequence KV residency, then uses request rate to size replica count. Replicas support TP/PP/EP/CP, including independent prefill and decode topologies for P/D disaggregation. Calibrate throughput and latency with measured benchmark data when available.
+4. **Model workloads against the placed cluster** — The dominant placed accelerator supplies the physical HBM, usable-memory limit, scale-up domain, compute and bandwidth envelope. Estimate training or inference throughput, communication overhead, MFU, goodput, duration, replica demand and power profile. Inference first derives a memory-fit TP floor from weight and one-sequence KV residency, then uses request rate to size replica count. Replicas support TP/PP/EP/CP, explicit shared or orthogonal TP/EP worker mapping, and independent prefill/decode pools for P/D disaggregation. InferenceX measurements can be reviewed as a current-cluster interactivity/throughput Pareto sweep before a compatible point is applied as calibration.
 5. **Analyse infrastructure** — Review capacity, redundancy, power paths, cooling balance, CFD-lite results, cable reach, rail utilisation, IP allocation, validation findings, and one-click remedies.
 6. **Plan delivery** — Evaluate BOM, CAPEX/OPEX/TCO, procurement lead times, installation waves, commissioning, and the critical path.
 7. **Issue deliverables** — Generate reports, drawings, rack plans, cable/IP schedules, NOS configurations, test packs, and model exports.
@@ -190,6 +191,7 @@ The built-in collaboration model is intended for a small trusted LAN and does no
 ## Third-party content and provenance
 
 - Vendor names and public specifications are used to identify compatible products. Values are tagged as `public-spec`, `announced`, `derived`, `estimate`, or `unverified` as applicable.
+- Inference benchmark data and run provenance are credited to [SemiAnalysis InferenceX](https://inferencex.semianalysis.com/) and its [public benchmark repository](https://github.com/SemiAnalysisAI/InferenceX). AIDC Studio's condition matching, interpolation and held-out error analysis are independent derived work and are not endorsed by SemiAnalysis; live benchmark rows are not bundled in this repository.
 - Product names and trademarks belong to their respective owners. AIDC Studio is not affiliated with or endorsed by them. See [TRADEMARKS.md](TRADEMARKS.md).
 - Published 3D models, USD files, thumbnails, and textures under `apps/web/public/assets` were created for AIDC Studio. The credited sky environment map is derived from [Poly Haven](https://polyhaven.com/a/autumn_field_puresky) content released under CC0 1.0; exact attribution is in `apps/web/public/assets/CREDITS.json`.
 - The repository contains no vendor-supplied 3D models, CFD data, logos, product photographs, HMI graphics, slides, manuals, or videos.

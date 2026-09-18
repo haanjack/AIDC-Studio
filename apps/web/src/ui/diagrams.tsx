@@ -159,7 +159,13 @@ const trafficState = (tier: TrafficTier): TrafficState => {
 const trafficColor = (state: TrafficState) =>
   state === 'error' ? 'var(--critical)' : state === 'warning' ? 'var(--warning)' : state === 'good' ? 'var(--good)' : 'var(--text-muted)';
 
-const trafficPct = (value: number) => `${(value * 100).toFixed(value < 0.1 ? 1 : 0)} %`;
+/** Keep extreme offered-demand overruns legible inside a small SVG node. */
+const trafficPct = (value: number) => {
+  const percent = value * 100;
+  if (percent >= 1_000_000) return `${(percent / 1_000_000).toFixed(1)}M %`;
+  if (percent >= 10_000) return `${(percent / 1_000).toFixed(1)}k %`;
+  return `${percent.toLocaleString(undefined, { maximumFractionDigits: value < 0.1 ? 1 : 0 })} %`;
+};
 
 /**
  * Workload traffic laid over the calculated fabric path. This deliberately visualises the analytical tier result rather than
@@ -194,11 +200,15 @@ export function TrafficBottleneckMap({ traffic, workloadName }: { traffic: Traff
         ? tr(rateMode ? 'network.traffic.pathTightInference' : 'network.traffic.pathTight', { tier: tierName, util: trafficPct(bottleneck.utilization), headroom: trafficPct(Math.max(0, bottleneck.headroom)) })
         : tr('network.traffic.pathHealthy', { tier: tierName, util: trafficPct(bottleneck.utilization), headroom: trafficPct(Math.max(0, bottleneck.headroom)) });
 
-  const nodeH = 116;
+  const nodeH = 120;
   const compactLayout = width < 700;
-  const gap = compactLayout ? 18 : 54;
+  const gap = compactLayout ? 18 : 32;
   const targetWidth = Math.max(440, width);
-  const nodeW = Math.min(148, Math.max(92, (targetWidth - 32 - Math.max(0, tiers.length - 1) * gap) / Math.max(1, tiers.length)));
+  // These cards contain full endpoint-rate labels; prefer readable content width and use horizontal scrolling below it.
+  // A small upper bound avoids turning a 3-tier path into three empty, screen-wide rectangles on ultrawide displays.
+  const nodeMinW = rateMode ? 228 : 164;
+  const nodePreferredW = rateMode ? 248 : 184;
+  const nodeW = Math.max(nodeMinW, Math.min(nodePreferredW, (targetWidth - 32 - Math.max(0, tiers.length - 1) * gap) / Math.max(1, tiers.length)));
   const compactNode = nodeW < 120;
   const minWidth = tiers.length * nodeW + Math.max(0, tiers.length - 1) * gap + 32;
   const svgWidth = Math.max(width, minWidth);
@@ -272,7 +282,7 @@ export function TrafficBottleneckMap({ traffic, workloadName }: { traffic: Traff
                 <text x={9} y={48} style={{ fill: color, fontSize: compactNode ? 19 : 22, fontWeight: 700 }}>{trafficPct(tier.utilization)}</text>
                 <text x={9} y={65} style={{ fill: 'var(--text-muted)', fontSize: compactNode ? 9 : 10.5 }}>{tierState === 'idle' ? tr('network.traffic.pathNotTraversed') : <>{tr(rateMode ? 'network.traffic.pathSteady' : 'network.traffic.pathBurst')} · {tr('network.traffic.pathAverage')} {trafficPct(avg)}</>}</text>
                 <text x={9} y={84} style={{ fill: 'var(--text-secondary)', fontSize: compactNode ? 9 : 10.5 }}>{tr(bytesKey, { value: tier.bytesPerStepGB.toFixed(1) })}</text>
-                <text x={9} y={100} style={{ fill: 'var(--text-secondary)', fontSize: compactNode ? 9 : 10.5 }}>{tr(capacityShortKey, { value: Math.round(tier.capacityGBps ?? 0).toLocaleString() })}</text>
+                <text x={9} y={100} style={{ fill: 'var(--text-secondary)', fontSize: compactNode ? 9 : 10.5 }}>{tr(aggregateMode ? capacityShortKey : tier.tier === 'scale-up' ? 'network.traffic.pathCapacityShortScaleUp' : 'network.traffic.pathCapacityShortEndpoint', { value: Math.round(tier.capacityGBps ?? 0).toLocaleString() })}</text>
                 <title>{`${fullTierLabel(tier.tier)}\n${tr(rateMode ? 'network.traffic.pathSteady' : 'network.traffic.pathBurst')}: ${trafficPct(tier.utilization)}\n${tr('network.traffic.pathAverage')}: ${trafficPct(avg)}\n${tr(bytesKey, { value: tier.bytesPerStepGB.toFixed(2) })}\n${tr(capacityKey, { value: (tier.capacityGBps ?? 0).toFixed(1) })}`}</title>
               </g>
             );
@@ -280,6 +290,7 @@ export function TrafficBottleneckMap({ traffic, workloadName }: { traffic: Traff
         </svg>
       </div>
       <p className="caption" style={{ margin: '0 0 4px' }}>{tr('network.traffic.pathFabricSeparation')}</p>
+      <p className="caption" style={{ margin: '0 0 4px' }}>{tr(aggregateMode ? 'network.traffic.pathScopeAggregate' : rateMode ? 'network.traffic.pathScopeInference' : 'network.traffic.pathScopeTraining')}</p>
       {groups.length > 0 && (
         <div className="row wrap" style={{ gap: 6, marginTop: 2 }} aria-label={tr('network.traffic.pathCollectives')}>
           <span className="hint">{tr('network.traffic.pathCollectives')}:</span>

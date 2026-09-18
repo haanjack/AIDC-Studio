@@ -1,14 +1,14 @@
-import { useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import {
-  acceleratorPeakSource, applyModelPreset, BENCHMARKS, calibrateFromBenchmark, calibrationRecord, catalogItems, REF_POD_TEMPLATE, effectiveShare,
-  fillRemainder, findBenchmark, findCatalogItem, findModelPreset, INFERENCE_HBM_UTILIZATION, inferenceMemoryEstimate, inferenceParallelismFor, inferenceReplicaGpus, MFU_DEFAULT, MODEL_PRESETS, NODE_SPECS, normalizeShares, peakFlopsFor, podSizing,
+  acceleratorPeakSource, analyzeInferenceWorkloadPareto, applyModelPreset, BENCHMARKS, calibrateFromBenchmark, calibrationRecord, catalogItems, REF_POD_TEMPLATE, effectiveShare, fitInferenceXRegression, INFERENCEX_MODELS,
+  fillRemainder, findBenchmark, findCatalogItem, findModelPreset, INFERENCE_HBM_UTILIZATION, inferenceMemoryEstimate, inferenceParallelismFor, inferencePromptTokens, inferenceReplicaGpus, inferenceXModelName, inferenceXPerformanceCurves, inferenceXPredictionBenchmark, MFU_DEFAULT, MODEL_PRESETS, NODE_SPECS, normalizeShares, peakFlopsFor, podSizing, predictInferenceXPerformance, rankInferenceXBenchmarks, rankInferenceXCacheBenchmarks,
   presetModifiedFields, scaleWarning, shareState, takeShareDetailed,
   type BenchmarkRow, type CalibrationPrecision, type CalibrationWarning, type CatalogItem, type SizingSuggestion, type UserMeasurement,
-  type InferenceMemoryEstimate, type InferenceParallelism, type WorkloadAnalysis, type WorkloadBlueprint, type WorkloadKind,
+  type InferenceMemoryEstimate, type InferenceParallelism, type InferenceWorkloadParetoPoint, type InferenceWorkloadParetoReport, type InferenceXCacheBenchmark, type InferenceXHardwarePrediction, type InferenceXPerformanceCurvePoint, type InferenceXPerformanceCurveReport, type InferenceXPredictionReport, type WorkloadAnalysis, type WorkloadBlueprint, type WorkloadKind,
 } from '@aidc/core';
 import { useApp } from '../store/appStore.ts';
 import { WORKLOAD_TEMPLATES } from '../app/derived.ts';
-import { downloadText } from '../app/api.ts';
+import { api, downloadText } from '../app/api.ts';
 import { fmt1, fmt2, fmtInt, fmtMoney, fmtPct, fmtPower } from '../app/format.ts';
 import { useI18n } from '../i18n/index.ts';
 import { BarChart, LineChart } from '../ui/charts.tsx';
@@ -40,7 +40,7 @@ function Affects({ tags, text, t }: { tags: Tag[]; text: string; t: Translate })
   return (
     <span>
       {tags.map((k) => (
-        <span key={k} className="badge" style={{ color: TAG_COLOR[k], marginRight: 4, fontSize: 10, padding: '0 5px' }}>{t(`workload.tag.${k}`)}</span>
+        <span key={k} className="badge" style={{ color: TAG_COLOR[k], marginRight: 4, fontSize: 11.5, padding: '0 5px' }}>{t(`workload.tag.${k}`)}</span>
       ))}
       {text}
     </span>
@@ -52,31 +52,54 @@ function ExternalLink({ href, children }: { href: string; children: ReactNode })
   return <a href={href} target="_blank" rel="noreferrer">{children}</a>;
 }
 
-function InferenceParallelFields({ title, value, onChange, memory, t }: {
+function fmtMemoryGB(gb: number): string {
+  if (!Number.isFinite(gb)) return '–';
+  return Math.abs(gb) < 1 ? `${fmt1(gb * 1000)} MB` : `${fmt1(gb)} GB`;
+}
+
+function fmtTokensPerMW(value: number): string {
+  if (!Number.isFinite(value)) return '–';
+  return `${fmt2(value / 1_000_000)} M tok/s/MW`;
+}
+
+function InferenceParallelFields({ title, value, onChange, memory, contextLimit, derivedDp, moe, t }: {
   title: string;
   value: InferenceParallelism;
   onChange: (next: InferenceParallelism) => void;
   memory?: InferenceMemoryEstimate;
+  contextLimit: number;
+  derivedDp?: number;
+  moe: boolean;
   t: Translate;
 }) {
   const minTp = memory?.minimumTp ?? 1;
   const set = (key: keyof InferenceParallelism, raw: number) => onChange({ ...value, [key]: Math.max(key === 'tp' ? minTp : 1, Math.round(raw)) });
+  const setDp = (raw: number) => {
+    const next = { ...value };
+    if (raw > 0) next.dp = Math.max(1, Math.round(raw));
+    else delete next.dp;
+    onChange(next);
+  };
+  const replicaGpus = inferenceReplicaGpus(value);
   return (
     <div className="card" style={{ background: 'var(--surface-2)' }}>
       <div className="row" style={{ justifyContent: 'space-between', marginBottom: 6 }}>
         <strong>{title}</strong>
-        <span className="badge">{t('workload.parallel.replicaGpus', { n: inferenceReplicaGpus(value) })}</span>
+        <span className="badge">{value.dp
+          ? t('workload.parallel.poolGpus', { replicas: value.dp, per: replicaGpus, total: value.dp * replicaGpus })
+          : t('workload.parallel.replicaGpusAuto', { n: replicaGpus, dp: derivedDp ?? '–' })}</span>
       </div>
       {memory && (
         <div style={{ marginBottom: 8 }}>
           <div className="row wrap" style={{ gap: 6 }}>
             <StatusLabel severity={memory.fits ? 'good' : 'error'}>{t(memory.fits ? 'workload.memory.fits' : 'workload.memory.oom')}</StatusLabel>
             <span className="hint">{t('workload.memory.breakdown', {
-              weights: fmt1(memory.weightGBPerGpu), kv: fmt1(memory.kvGBPerGpu), used: fmt1(memory.totalGBPerGpu),
-              usable: fmt1(memory.usableHbmGB), physical: fmt1(memory.gpuMemoryGB), pct: fmtPct(memory.hbmUtilization),
+              weights: fmtMemoryGB(memory.weightGBPerGpu), kv: fmtMemoryGB(memory.kvGBPerGpu), used: fmtMemoryGB(memory.totalGBPerGpu),
+              usable: fmtMemoryGB(memory.usableHbmGB), physical: fmtMemoryGB(memory.gpuMemoryGB), pct: fmtPct(memory.hbmUtilization),
             })}</span>
           </div>
-          <p className="caption" style={{ margin: '4px 0 0' }}>{t('workload.memory.basis', { wp: memory.weightPrecision.toUpperCase(), kvp: memory.kvPrecision.toUpperCase(), tokens: fmtInt(memory.tokenResidency) })}</p>
+          <p className="caption" style={{ margin: '4px 0 0' }}>{t('workload.memory.basis', { wp: memory.weightPrecision.toUpperCase(), kvp: memory.kvPrecision.toUpperCase(), tokens: fmtInt(memory.tokenResidency), limit: fmtInt(contextLimit) })}</p>
+          {memory.kvPrecision === 'fp4' && <p className="caption" style={{ margin: '3px 0 0' }}>{t('workload.memory.fp4Kv')}</p>}
           {memory.minimumTp ? (
             <div className="row wrap" style={{ gap: 6, marginTop: 5 }}>
               <span className={`pill ${memory.crossesScaleUp ? 'warn' : 'good'}`}><span className="dot" />{t('workload.memory.minimumTp', { tp: memory.minimumTp })}</span>
@@ -91,7 +114,186 @@ function InferenceParallelFields({ title, value, onChange, memory, t }: {
         <NumberField label="CP" value={value.cp} min={1} onChange={(v) => set('cp', v)} hint={<Affects tags={['memory', 'bytes']} text={t('workload.h.infCp')} t={t} />} />
         <NumberField label="PP" value={value.pp} min={1} onChange={(v) => set('pp', v)} hint={<Affects tags={['memory', 'bytes']} text={t('workload.h.infPp')} t={t} />} />
         <NumberField label="EP" value={value.ep} min={1} onChange={(v) => set('ep', v)} hint={<Affects tags={['memory', 'bytes']} text={t('workload.h.infEp')} t={t} />} />
+        {moe && <SelectField
+          label={t('workload.f.expertMapping')}
+          value={value.expertMapping ?? 'shared'}
+          options={[
+            { value: 'shared', label: t('workload.parallel.expertShared') },
+            { value: 'orthogonal', label: t('workload.parallel.expertOrthogonal') },
+          ]}
+          onChange={(v) => onChange({ ...value, expertMapping: v })}
+          hint={<Affects tags={['memory', 'bytes']} text={t('workload.h.expertMapping')} t={t} />}
+        />}
+        <NumberField label={t('workload.f.infDp')} value={value.dp ?? 0} min={0} onChange={setDp} hint={<Affects tags={['compute', 'power']} text={t('workload.h.infDp', { dp: derivedDp ?? '–' })} t={t} />} />
       </div>
+    </div>
+  );
+}
+
+function InferenceThroughputCharts({ inf, wa, t }: {
+  inf: NonNullable<WorkloadBlueprint['inference']>;
+  wa: WorkloadAnalysis;
+  t: Translate;
+}) {
+  if (wa.outputTokensPerSec == null || wa.totalTokensPerSec == null || wa.maxRequestsPerSec == null) return null;
+  const maxRps = Math.max(1, inf.requestsPerSec, wa.maxRequestsPerSec) * 1.15;
+  const requestRatePoints = [...new Set([
+    ...Array.from({ length: 13 }, (_, i) => (maxRps * i) / 12),
+    inf.requestsPerSec,
+    wa.maxRequestsPerSec,
+  ])].sort((a, b) => a - b);
+  const tokensPerRequest = inf.inputTokens + inf.outputTokens;
+  const cachedPrefix = Number(wa.details?.cachedPrefixTokens ?? Math.min(inf.inputTokens, Math.max(0, inf.cachedPrefixTokens ?? 0)));
+  const uncachedInput = Number(wa.details?.uncachedInputTokens ?? Math.max(0, inf.inputTokens - cachedPrefix));
+  const computedTokensPerRequest = uncachedInput + inf.outputTokens;
+  const perGpuRows = [
+    { label: t('workload.res.perGpuModel'), value: Number(wa.details?.modeledOutputTokensPerSecPerGpu ?? 0) },
+    ...(wa.details?.calibratedOutputTokensPerSecPerGpu != null
+      ? [{ label: t('workload.res.perGpuCalibration'), value: Number(wa.details.calibratedOutputTokensPerSecPerGpu) }]
+      : []),
+    { label: t('workload.res.perGpuDesign'), value: Number(wa.details?.designOutputTokensPerSecPerGpu ?? 0) },
+    { label: t('workload.res.perGpuAllocated'), value: Number(wa.details?.allocatedOutputTokensPerSecPerGpu ?? 0) },
+  ].filter((row) => Number.isFinite(row.value) && row.value >= 0);
+
+  return (
+    <div style={{ marginTop: 12 }}>
+      <div className="grid-2">
+        <LineChart
+          title={t('workload.res.clusterCurve')}
+          series={[
+            {
+              key: 'demand', name: t('workload.res.requestedTokens'),
+              points: requestRatePoints.map((rps) => ({ x: rps, y: rps * tokensPerRequest })),
+            },
+            {
+              key: 'served', name: t('workload.res.servedTokens'),
+              points: requestRatePoints.map((rps) => ({ x: rps, y: Math.min(rps, wa.maxRequestsPerSec!) * tokensPerRequest })),
+            },
+            ...(cachedPrefix > 0 ? [{
+              key: 'computed', name: t('workload.res.computedTokens'),
+              points: requestRatePoints.map((rps) => ({ x: rps, y: Math.min(rps, wa.maxRequestsPerSec!) * computedTokensPerRequest })),
+            }] : []),
+          ]}
+          height={230}
+          xFormat={(v) => `${fmt1(v)} req/s`}
+          yFormat={(v) => `${fmtInt(v)} tok/s`}
+          yMin={0}
+        />
+        <BarChart
+          title={t('workload.res.perGpuCompare')}
+          data={perGpuRows.map((row) => ({ label: row.label, values: { output: row.value } }))}
+          series={[{ key: 'output', name: t('workload.res.outputPerGpu') }]}
+          format={(v) => `${fmtInt(v)} tok/s/GPU`}
+          labelWidth={190}
+          rowHeight={36}
+        />
+      </div>
+      <p className="caption" style={{ margin: '8px 0 0' }}>{t('workload.res.throughputBasis', { batch: fmtInt(Number(wa.details?.maxBatch ?? 0)) })}</p>
+      {wa.details?.calibratedOutputTokensPerSecPerGpu == null && (
+        <p className="caption" style={{ margin: '3px 0 0' }}><StatusLabel severity="warning">{t('workload.badge.uncalibrated')}</StatusLabel> {t('workload.res.noInferenceCalibration')}</p>
+      )}
+      <p className="caption" style={{ margin: '3px 0 0' }}>{t('workload.res.networkDemandBasis')}</p>
+    </div>
+  );
+}
+
+function InferenceWorkloadParetoCard({ report, t }: { report: InferenceWorkloadParetoReport; t: Translate }) {
+  const frontier = report.series.flatMap((series) => series.frontier)
+    .sort((a, b) => a.interactivityTokPerSecPerUser - b.interactivityTokPerSecPerUser);
+  const targetCoverage = frontier.find((point) => point.regression)?.regression;
+  const stageTopology = (parallelism: InferenceParallelism, replicas: number) => `TP${parallelism.tp}/PP${parallelism.pp}/DP${replicas}/EP${parallelism.ep}/CP${parallelism.cp}`;
+  const topology = (point: InferenceWorkloadParetoPoint) => point.servingMode === 'disaggregated'
+    ? `P ${stageTopology(point.prefill, point.prefillReplicas)} · D ${stageTopology(point.decode, point.decodeReplicas)}`
+    : stageTopology(point.decode, point.decodeReplicas);
+  const statusKey = (point: InferenceWorkloadParetoPoint) => point.networkLimited
+    ? 'workload.pareto.networkLimited'
+    : point.calibrated
+      ? 'workload.pareto.exactCalibration'
+      : point.regression
+        ? `workload.pareto.${point.regression.quality}`
+        : point.meetsCurrentSlo
+          ? 'workload.pareto.sloMet'
+          : 'workload.pareto.outsideSlo';
+  const tooltip = (point: InferenceWorkloadParetoPoint) => ({
+    title: t('workload.pareto.hover.title', {
+      mode: t(`workload.pred.mode.${point.servingMode}`),
+      interactivity: fmt1(point.interactivityTokPerSecPerUser),
+    }),
+    rows: [
+      ...(point.servingMode === 'disaggregated'
+        ? [
+          { name: t('workload.pareto.hover.prefill'), value: stageTopology(point.prefill, point.prefillReplicas) },
+          { name: t('workload.pareto.hover.decode'), value: stageTopology(point.decode, point.decodeReplicas) },
+        ]
+        : [{ name: t('workload.pareto.hover.parallelism'), value: stageTopology(point.decode, point.decodeReplicas) }]),
+      { name: t('workload.pareto.hover.output'), value: `${fmtInt(point.outputCapacityTokensPerSec)} tok/s` },
+      { name: t('workload.pareto.hover.range'), value: `${fmtInt(point.lowerOutputCapacityTokensPerSec)}–${fmtInt(point.upperOutputCapacityTokensPerSec)} tok/s` },
+      ...(point.regression ? [{ name: t('workload.pareto.hover.perGpu'), value: `${fmtInt(point.regression.outputTokensPerSecPerGpu)} tok/s/GPU` }] : []),
+      { name: t('workload.pareto.hover.analytical'), value: `${fmtInt(point.analyticalOutputCapacityTokensPerSec)} tok/s` },
+      { name: 'TTFT / TPOT', value: `${fmtInt(point.ttftMs)} / ${fmt1(point.tpotMs)} ms` },
+      { name: t('workload.pareto.hover.gpus'), value: `${point.usedGpus} / ${point.allocatedGpus} GPU` },
+      { name: t('workload.pareto.hover.limit'), value: t(statusKey(point)) },
+    ],
+  });
+  return (
+    <div id="workload-pareto-result" className="card" style={{ background: 'var(--surface-2)', marginTop: 12, scrollMarginTop: 72 }}>
+      <div className="row wrap" style={{ gap: 8 }}>
+        <h4 style={{ margin: 0 }}>{t('workload.pareto.title')}</h4>
+        <span className="badge src-estimate">{t('workload.pareto.analytical')}</span>
+        <span className="badge">{report.accelerator} · {t('workload.pareto.gpus', { n: report.allocatedGpus })}</span>
+      </div>
+      <p className="hint">{t('workload.pareto.intro', { name: report.workloadName })}</p>
+      <p className="caption">{t('workload.pareto.coverage', { evaluated: fmtInt(report.evaluated), feasible: fmtInt(report.feasible) })}</p>
+      {report.regression ? (
+        <p className="caption"><StatusIcon severity={Number(report.regression.modelHoldoutP90Error ?? 2) <= 1 ? 'good' : 'warning'} /> {t('workload.pareto.validation', {
+          runs: fmtInt(report.regression.runs), conditions: fmtInt(report.regression.conditions), models: report.regression.models, hardware: report.regression.hardware,
+          variants: fmtInt(report.regression.variantConditions), additional: fmtInt(report.regression.additionalVariants),
+          implementationMedian: fmtPct(report.regression.implementationMedianError, 1), implementationP90: fmtPct(report.regression.implementationP90Error, 1),
+          modelMedian: fmtPct(report.regression.modelHoldoutMedianError, 1), modelP90: fmtPct(report.regression.modelHoldoutP90Error, 1),
+          hardwareMedian: fmtPct(report.regression.hardwareHoldoutMedianError, 1), hardwareP90: fmtPct(report.regression.hardwareHoldoutP90Error, 1),
+        })}</p>
+      ) : <p className="caption"><StatusIcon severity="warning" /> {t('workload.pareto.noRegression')}</p>}
+      {targetCoverage && (
+        <p className="caption"><StatusIcon severity={targetCoverage.quality === 'cross-validated' ? 'good' : 'warning'} /> {t('workload.pareto.targetCoverage', {
+          model: t(targetCoverage.modelInTrainingSet ? 'workload.pareto.inTraining' : 'workload.pareto.unseenModel'),
+          hardware: t(targetCoverage.hardwareInTrainingSet ? 'workload.pareto.inTraining' : 'workload.pareto.unseenHardware'),
+          band: fmtPct(targetCoverage.relativeErrorBand, 1),
+        })}</p>
+      )}
+      <LineChart
+        title={t('workload.pareto.chart')}
+        series={report.series.map((series) => ({
+          key: series.servingMode,
+          name: t(`workload.pred.mode.${series.servingMode}`),
+          color: series.servingMode === 'aggregated' ? '#5b8def' : '#64c78b',
+          points: series.frontier.map((point) => ({ x: point.interactivityTokPerSecPerUser, y: point.outputCapacityTokensPerSec, tooltip: tooltip(point) })),
+        })).filter((series) => series.points.length > 0)}
+        height={300}
+        xFormat={(value) => t('workload.curve.xValue', { n: fmt1(value) })}
+        yFormat={(value) => `${fmtInt(value)} output tok/s`}
+        yMin={0}
+        xRefLines={[{ x: report.targetInteractivityTokPerSecPerUser, label: t('workload.curve.targetSlo') }]}
+        showPoints
+      />
+      <p className="caption" style={{ margin: '8px 0 0' }}><StatusIcon severity="info" /> {t('workload.pareto.reading')}</p>
+      <details style={{ marginTop: 10 }}>
+        <summary className="secondary" style={{ cursor: 'pointer' }}>{t('workload.pareto.points', { n: frontier.length })}</summary>
+        <DataTable
+          maxHeight={320}
+          columns={[
+            { key: 'm', header: t('workload.curve.col.mode'), render: (point: InferenceWorkloadParetoPoint) => <span>{t(`workload.pred.mode.${point.servingMode}`)}{point.selectedTopology ? ` · ${t('workload.pareto.selected')}` : ''}</span> },
+            { key: 'i', header: t('workload.curve.col.interactivity'), num: true, render: (point) => `${fmt1(point.interactivityTokPerSecPerUser)} tok/s/user` },
+            { key: 'o', header: t('workload.pareto.output'), num: true, render: (point) => <span>{fmtInt(point.outputCapacityTokensPerSec)} tok/s<br /><span className="hint">{fmtInt(point.lowerOutputCapacityTokensPerSec)}–{fmtInt(point.upperOutputCapacityTokensPerSec)}</span></span> },
+            { key: 'l', header: 'TTFT / TPOT', num: true, render: (point) => `${fmtInt(point.ttftMs)} / ${fmt1(point.tpotMs)} ms` },
+            { key: 't', header: t('workload.curve.col.topology'), render: topology },
+            { key: 'g', header: t('workload.pareto.placement'), render: (point) => `${point.usedGpus} / ${point.allocatedGpus} GPU` },
+            { key: 's', header: t('workload.pareto.status'), render: (point) => <span className={`badge ${point.meetsCurrentSlo && !point.networkLimited ? 'src-public-spec' : 'src-estimate'}`}>{t(statusKey(point))}</span> },
+          ]}
+          rows={frontier}
+          rowKey={(point) => point.id}
+        />
+      </details>
+      <p className="caption" style={{ marginBottom: 0 }}>{t('workload.pareto.caveat')}</p>
     </div>
   );
 }
@@ -109,6 +311,9 @@ export function WorkloadPanel() {
   const [tpl, setTpl] = useState(WORKLOAD_TEMPLATES[0].key);
   const [advOpen, setAdvOpen] = useState(false);
   const [shareWant, setShareWant] = useState(0.5);
+  const [paretoReport, setParetoReport] = useState<InferenceWorkloadParetoReport>();
+  const [paretoLoading, setParetoLoading] = useState(false);
+  const [paretoError, setParetoError] = useState('');
   const wl = project.workloads.find((w) => w.id === selId) ?? project.workloads[0];
   const wa = analysis?.workloads.find((w) => w.workloadId === wl?.id);
   // shares are taken inside the cluster the job runs in (largest cluster — engines/workload.ts jobClusterGpus / traffic.ts)
@@ -221,8 +426,23 @@ export function WorkloadPanel() {
   const applyPreset = (id: string) => setW((w) => {
     const p = id ? findModelPreset(id) : undefined;
     if (!p) { delete w.presetId; return; }
+    const changedPreset = w.presetId !== p.id;
     w.model = applyModelPreset(w.model, p);
     w.presetId = p.id;
+    if (changedPreset) {
+      delete w.calibration;
+      if (w.inference) {
+        delete w.inference.prefixCacheTrace;
+        const base: InferenceParallelism = { tp: 1, pp: 1, ep: 1, cp: 1 };
+        const hbm = placedGpuRack?.compute?.gpuMemoryGB;
+        const domain = placedGpuRack?.compute?.scaleUp.domainSize;
+        const minimumTp = hbm ? inferenceMemoryEstimate(w, 'aggregated', base, hbm, domain ?? 1)?.minimumTp ?? 1 : 1;
+        const reset = { ...base, tp: minimumTp };
+        w.inference.parallelism = { ...reset };
+        w.inference.prefillParallelism = { ...reset };
+        w.inference.decodeParallelism = { ...reset };
+      }
+    }
     if (!p.moe && w.training) w.training.ep = 1;
     if (w.inference) {
       const keys = ['parallelism', 'prefillParallelism', 'decodeParallelism'] as const;
@@ -262,6 +482,7 @@ export function WorkloadPanel() {
   const moe = findBenchmark(EVIDENCE_MOE)?.derived?.tflopsPerGpu;
   const tr = wl?.training;
   const inf = wl?.inference;
+  const prompt = inf ? inferencePromptTokens(inf) : undefined;
   const inferenceMemory = (() => {
     const c = placedGpuRack?.compute;
     if (!wl || !inf || !c?.gpuMemoryGB) return undefined;
@@ -271,6 +492,36 @@ export function WorkloadPanel() {
       : { aggregated: estimate('aggregated') };
   })();
   const kindOptions: { value: WorkloadKind; label: string }[] = (['llm-pretrain', 'llm-finetune', 'llm-inference', 'hpc-simulation'] as WorkloadKind[]).map((k) => ({ value: k, label: t(`workload.kind.${k}`) }));
+
+  useEffect(() => {
+    setParetoReport(undefined);
+    setParetoError('');
+  }, [wl, placedGpuRack?.id, clusterGpus]);
+
+  const runPareto = () => {
+    if (!wl?.inference || paretoLoading) return;
+    setParetoLoading(true);
+    setParetoError('');
+    // Let the loading state paint before the bounded synchronous design sweep starts.
+    setTimeout(async () => {
+      try {
+        const loaded = await Promise.allSettled(Object.keys(INFERENCEX_MODELS).map(async (presetId) => {
+          const response = await api.inferenceXBenchmarks(presetId);
+          return { presetId, rows: response.rows };
+        }));
+        const datasets = loaded.flatMap((result) => result.status === 'fulfilled' && result.value.rows.length ? [result.value] : []);
+        const regression = fitInferenceXRegression(datasets);
+        const report = analyzeInferenceWorkloadPareto(project, wl, regression);
+        setParetoReport(report);
+        if (!report) setParetoError(t('workload.pareto.unavailable'));
+        else requestAnimationFrame(() => document.getElementById('workload-pareto-result')?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
+      } catch (error) {
+        setParetoError(error instanceof Error ? error.message : String(error));
+      } finally {
+        setParetoLoading(false);
+      }
+    }, 0);
+  };
 
   return (
     <div className="grid-auto">
@@ -315,7 +566,7 @@ export function WorkloadPanel() {
         </div>
         {placedGpuRack?.compute ? (
           <>
-            <div className="grid-4" style={{ marginTop: 10 }}>
+            <div className="workload-cluster-grid" style={{ marginTop: 10 }}>
               <Stat label={t('workload.hardware.platform')} value={placedGpuRack.name} delta={<span>{placedGpuRack.vendor} · <SourceBadge source={placedGpuRack.source} /></span>} />
               <Stat label={t('workload.hardware.cluster')} value={t('workload.hardware.gpus', { n: fmtInt(clusterGpus) })} delta={t('workload.hardware.primaryRacks', { racks: placedGpuPlatform?.racks ?? 0, gpus: placedGpuPlatform?.gpus ?? 0 })} />
               <Stat label={t('workload.hardware.hbm')} value={`${fmt1(placedGpuRack.compute.gpuMemoryGB)} GB/GPU`} delta={t('workload.hardware.usable', { n: fmt1(placedGpuRack.compute.gpuMemoryGB * INFERENCE_HBM_UTILIZATION), pct: fmtPct(INFERENCE_HBM_UTILIZATION) })} />
@@ -337,7 +588,7 @@ export function WorkloadPanel() {
       </div>
 
       {/* ── C. blueprint list + share meter ── */}
-      <div className="card">
+      <div className="card" style={{ gridColumn: '1 / -1' }}>
         <h3>{t('workload.list.title')}</h3>
         <DataTable
           columns={[
@@ -345,12 +596,16 @@ export function WorkloadPanel() {
             { key: 'k', header: t('workload.col.kind'), render: (w) => t(`workload.kind.${w.kind}`) },
             { key: 'g', header: t('workload.col.share'), num: true, render: (w) => shares.state === 'over' ? <span title={t('workload.share.scaledTitle')}>{fmtPct(w.gpuShare)} → {fmtPct(effectiveShare(project.workloads, w), 1)}</span> : fmtPct(w.gpuShare) },
             { key: 'r', header: t('workload.col.result'), num: true, render: (w) => { const a = analysis?.workloads.find((x) => x.workloadId === w.id); return a?.timeToTrainDays != null ? days(a.timeToTrainDays) : a?.gpusRequired != null ? `${fmtInt(a.gpusRequired)} GPU` : '–'; } },
-            { key: 's', header: t('workload.col.status'), render: (w) => (
-              <span className="row" style={{ gap: 4 }}>
-                {w.presetId && <span className="badge" title={findModelPreset(w.presetId)?.sourceUrl}>{t('workload.badge.preset')}{presetModifiedFields(w).length ? '*' : ''}</span>}
-                {w.calibration ? <span className="badge src-public-spec" title={w.calibration.source}>{t('workload.badge.calibrated')}</span> : isTrainingKind(w.kind) || w.kind === 'llm-inference' ? <span className="badge src-estimate" title={t('workload.badge.uncalibratedTitle')}>{t('workload.badge.uncalibrated')}</span> : null}
-              </span>
-            ) },
+            { key: 's', header: t('workload.col.status'), render: (w) => {
+              const a = analysis?.workloads.find((x) => x.workloadId === w.id);
+              const stale = w.kind === 'llm-inference' && !!w.calibration && Number(a?.details?.calibrationApplied ?? 0) === 0;
+              return (
+                <span className="row" style={{ gap: 4 }}>
+                  {w.presetId && <span className="badge" title={findModelPreset(w.presetId)?.sourceUrl}>{t('workload.badge.preset')}{presetModifiedFields(w).length ? '*' : ''}</span>}
+                  {w.calibration ? <span className={`badge ${stale ? 'src-estimate' : 'src-public-spec'}`} title={stale ? t('workload.res.staleCalibration') : w.calibration.source}>{t(stale ? 'workload.badge.staleCalibration' : 'workload.badge.calibrated')}</span> : isTrainingKind(w.kind) || w.kind === 'llm-inference' ? <span className="badge src-estimate" title={t('workload.badge.uncalibratedTitle')}>{t('workload.badge.uncalibrated')}</span> : null}
+                </span>
+              );
+            } },
           ]}
           rows={project.workloads}
           rowKey={(w) => w.id}
@@ -376,7 +631,7 @@ export function WorkloadPanel() {
           </div>
         </div>
         <div className="row" style={{ marginTop: 10 }}>
-          <div className="grow"><SelectField label={t('workload.list.template')} value={tpl} options={WORKLOAD_TEMPLATES.map((x) => ({ value: x.key, label: t(x.labelKey) }))} onChange={setTpl} /></div>
+          <div className="grow"><SelectField label={t('workload.list.template')} value={tpl} options={WORKLOAD_TEMPLATES.map((x) => ({ value: x.key, label: t(x.labelKey, x.labelParams) }))} onChange={setTpl} /></div>
           <button className="btn" onClick={() => { const w = WORKLOAD_TEMPLATES.find((x) => x.key === tpl)!.make(); update((d) => { d.workloads.push(w); }); setSelId(w.id); }}><Icon name="plus" size={13} />{t('workload.list.add')}</button>
         </div>
         {wl && (
@@ -404,10 +659,10 @@ export function WorkloadPanel() {
 
       {/* ── C. grouped parameters ── */}
       {wl ? (
-        <div className="card wl-form">
+        <div className="card wl-form workload-parameters" style={{ gridColumn: '1 / -1' }}>
           <h3 className="row" style={{ gap: 8 }}>
             {t('workload.params.title')}
-            {wl.calibration && <span className="badge src-public-spec" title={wl.calibration.source}>{t('workload.badge.calibrated')} · {wl.calibration.benchmarkId ?? t('workload.cal.userShort')}</span>}
+            {wl.calibration && <span className={`badge ${inf && wa && Number(wa.details?.calibrationApplied ?? 0) === 0 ? 'src-estimate' : 'src-public-spec'}`} title={inf && wa && Number(wa.details?.calibrationApplied ?? 0) === 0 ? t('workload.res.staleCalibration') : wl.calibration.source}>{t(inf && wa && Number(wa.details?.calibrationApplied ?? 0) === 0 ? 'workload.badge.staleCalibration' : 'workload.badge.calibrated')} · {wl.calibration.benchmarkId ?? t('workload.cal.userShort')}</span>}
           </h3>
 
           <Section title={t('workload.group.basic')}>
@@ -464,7 +719,12 @@ export function WorkloadPanel() {
               <NumberField label={t('workload.f.activeParamsB')} unit="B" value={wl.model.activeParamsB} onChange={(v) => setW((w) => { w.model.activeParamsB = v; })} hint={<Affects tags={['compute', 'calib']} text={t('workload.h.activeParamsB')} t={t} />} />
               <NumberField label={t('workload.f.layers')} value={wl.model.layers} onChange={(v) => setW((w) => { w.model.layers = v; })} hint={<Affects tags={['compute', 'bytes', 'memory']} text={t('workload.h.layers')} t={t} />} />
               <NumberField label={t('workload.f.hidden')} value={wl.model.hiddenSize} onChange={(v) => setW((w) => { w.model.hiddenSize = v; })} hint={<Affects tags={['compute', 'bytes']} text={t('workload.h.hidden')} t={t} />} />
-              <NumberField label={t('workload.f.seqLen')} value={wl.model.seqLen} onChange={(v) => setW((w) => { w.model.seqLen = v; })} hint={<Affects tags={['compute', 'memory']} text={t('workload.h.seqLen')} t={t} />} />
+              <NumberField
+                label={t(inf ? 'workload.f.contextLimit' : 'workload.f.seqLen')}
+                value={wl.model.seqLen}
+                onChange={(v) => setW((w) => { w.model.seqLen = v; })}
+                hint={<Affects tags={['compute', 'memory']} text={t(inf ? 'workload.h.contextLimit' : 'workload.h.seqLen')} t={t} />}
+              />
             </div>
           </Section>
 
@@ -499,6 +759,28 @@ export function WorkloadPanel() {
           )}
           {inf && wl.kind === 'llm-inference' && (
             <>
+              <Section title={t('workload.group.inference')}>
+                <div className="fields-2">
+                  <NumberField label={t('workload.f.rps')} unit="req/s" value={inf.requestsPerSec} onChange={(v) => setW((w) => { w.inference!.requestsPerSec = v; })} hint={<Affects tags={['compute']} text={t('workload.h.rps')} t={t} />} />
+                  <NumberField label={t('workload.f.inputTokens')} value={inf.inputTokens} onChange={(v) => setW((w) => { w.inference!.inputTokens = v; w.inference!.cachedPrefixTokens = Math.min(v, w.inference!.cachedPrefixTokens ?? 0); })} hint={<Affects tags={['compute', 'memory']} text={t('workload.h.inputTokens')} t={t} />} />
+                  <NumberField label={t('workload.f.cachedPrefix')} value={inf.cachedPrefixTokens ?? 0} min={0} max={inf.inputTokens} disabled={!!inf.prefixCacheTrace} onChange={(v) => setW((w) => { w.inference!.cachedPrefixTokens = Math.min(w.inference!.inputTokens, Math.max(0, Math.round(v))); })} hint={<Affects tags={['compute', 'bytes']} text={t(inf.prefixCacheTrace ? 'workload.h.cachedPrefixTraceActive' : 'workload.h.cachedPrefix')} t={t} />} />
+                  <NumberField label={t('workload.f.outputTokens')} value={inf.outputTokens} onChange={(v) => setW((w) => { w.inference!.outputTokens = v; })} hint={<Affects tags={['compute', 'calib']} text={t('workload.h.outputTokens')} t={t} />} />
+                  <NumberField label={<Term id="ttft">TTFT SLO</Term>} unit="ms" value={inf.ttftSloMs} onChange={(v) => setW((w) => { w.inference!.ttftSloMs = v; })} hint={<Affects tags={['compute']} text={t('workload.h.ttft')} t={t} />} />
+                  <NumberField label={<Term id="tpot">TPOT SLO</Term>} unit="ms" value={inf.tpotSloMs} onChange={(v) => setW((w) => { w.inference!.tpotSloMs = v; })} hint={<Affects tags={['compute', 'calib']} text={t('workload.h.tpot', { intv: fmt1(1000 / Math.max(1, inf.tpotSloMs)) })} t={t} />} />
+                  <SelectField label={t('workload.f.weightPrecision')} value={inf.weightPrecision ?? 'fp8'} options={[{ value: 'fp16', label: 'FP16' }, { value: 'bf16', label: 'BF16' }, { value: 'fp8', label: 'FP8' }, { value: 'fp4', label: 'FP4' }]} onChange={(v) => setW((w) => { w.inference!.weightPrecision = v; })} hint={<Affects tags={['memory']} text={t('workload.h.weightPrecision')} t={t} />} />
+                  <SelectField label={<Term id="kv-cache">{t('workload.f.kvPrecision')}</Term>} value={inf.kvPrecision ?? 'fp8'} options={[{ value: 'fp16', label: 'FP16' }, { value: 'bf16', label: 'BF16' }, { value: 'fp8', label: 'FP8' }, { value: 'fp4', label: 'FP4' }]} onChange={(v) => setW((w) => { w.inference!.kvPrecision = v; })} hint={<Affects tags={['memory', 'bytes']} text={t('workload.h.kvPrecision')} t={t} />} />
+                </div>
+                <div className="card" style={{ background: 'var(--surface-2)', marginTop: 8 }}>
+                  <div className="row wrap" style={{ gap: 8 }}>
+                    <StatusLabel severity={inf.inputTokens + inf.outputTokens <= wl.model.seqLen ? 'good' : 'warning'}>
+                      {t(inf.inputTokens + inf.outputTokens <= wl.model.seqLen ? 'workload.context.within' : 'workload.context.over')}
+                    </StatusLabel>
+                    <strong>{t('workload.context.used', { used: fmtInt(inf.inputTokens + inf.outputTokens), limit: fmtInt(wl.model.seqLen) })}</strong>
+                  </div>
+                  <p className="caption" style={{ margin: '4px 0 0' }}>{t(prompt?.mode === 'trace' ? 'workload.context.tracePrefix' : 'workload.context.prefix', { total: fmtInt(prompt?.input ?? inf.inputTokens), cached: fmtInt(prompt?.cached ?? 0), gpu: fmtInt(prompt?.gpuCached ?? 0), remote: fmtInt(prompt?.remoteCached ?? 0), uncached: fmtInt(prompt?.uncached ?? inf.inputTokens), pct: fmtPct(prompt?.hitRatio ?? 0) })}</p>
+                  <p className="caption" style={{ margin: '4px 0 0' }}>{t('workload.context.explain')}</p>
+                </div>
+              </Section>
               <Section title={<Term id="parallelism">{t('workload.group.parallel')}</Term>}>
                 <Field
                   label={<Term id="prefill-decode">{t('workload.f.servingMode')}</Term>}
@@ -522,6 +804,9 @@ export function WorkloadPanel() {
                         value={inferenceParallelismFor(inf, 'prefill')}
                         onChange={(next) => setW((w) => { w.inference!.prefillParallelism = next; })}
                         memory={inferenceMemory?.prefill}
+                        contextLimit={wl.model.seqLen}
+                        derivedDp={Number(wa?.details?.prefillReplicas ?? 0) || undefined}
+                        moe={!!wl.model.moe}
                         t={t}
                       />
                       <InferenceParallelFields
@@ -529,6 +814,9 @@ export function WorkloadPanel() {
                         value={inferenceParallelismFor(inf, 'decode')}
                         onChange={(next) => setW((w) => { w.inference!.decodeParallelism = next; })}
                         memory={inferenceMemory?.decode}
+                        contextLimit={wl.model.seqLen}
+                        derivedDp={Number(wa?.details?.decodeReplicas ?? 0) || undefined}
+                        moe={!!wl.model.moe}
                         t={t}
                       />
                     </>
@@ -538,20 +826,12 @@ export function WorkloadPanel() {
                       value={inferenceParallelismFor(inf, 'aggregated')}
                       onChange={(next) => setW((w) => { w.inference!.parallelism = next; })}
                       memory={inferenceMemory?.aggregated}
+                      contextLimit={wl.model.seqLen}
+                      derivedDp={Number(wa?.details?.decodeReplicas ?? 0) || undefined}
+                      moe={!!wl.model.moe}
                       t={t}
                     />
                   )}
-                </div>
-              </Section>
-              <Section title={t('workload.group.inference')}>
-                <div className="fields-2">
-                  <NumberField label={t('workload.f.rps')} unit="req/s" value={inf.requestsPerSec} onChange={(v) => setW((w) => { w.inference!.requestsPerSec = v; })} hint={<Affects tags={['compute']} text={t('workload.h.rps')} t={t} />} />
-                  <NumberField label={t('workload.f.inputTokens')} value={inf.inputTokens} onChange={(v) => setW((w) => { w.inference!.inputTokens = v; })} hint={<Affects tags={['compute', 'memory']} text={t('workload.h.inputTokens')} t={t} />} />
-                  <NumberField label={t('workload.f.outputTokens')} value={inf.outputTokens} onChange={(v) => setW((w) => { w.inference!.outputTokens = v; })} hint={<Affects tags={['compute', 'calib']} text={t('workload.h.outputTokens')} t={t} />} />
-                  <NumberField label={<Term id="ttft">TTFT SLO</Term>} unit="ms" value={inf.ttftSloMs} onChange={(v) => setW((w) => { w.inference!.ttftSloMs = v; })} hint={<Affects tags={['compute']} text={t('workload.h.ttft')} t={t} />} />
-                  <NumberField label={<Term id="tpot">TPOT SLO</Term>} unit="ms" value={inf.tpotSloMs} onChange={(v) => setW((w) => { w.inference!.tpotSloMs = v; })} hint={<Affects tags={['compute', 'calib']} text={t('workload.h.tpot', { intv: fmt1(1000 / Math.max(1, inf.tpotSloMs)) })} t={t} />} />
-                  <SelectField label={t('workload.f.weightPrecision')} value={inf.weightPrecision ?? 'fp8'} options={[{ value: 'fp16', label: 'FP16' }, { value: 'bf16', label: 'BF16' }, { value: 'fp8', label: 'FP8' }, { value: 'fp4', label: 'FP4' }]} onChange={(v) => setW((w) => { w.inference!.weightPrecision = v; })} hint={<Affects tags={['memory']} text={t('workload.h.weightPrecision')} t={t} />} />
-                  <SelectField label={<Term id="kv-cache">{t('workload.f.kvPrecision')}</Term>} value={inf.kvPrecision ?? 'fp8'} options={[{ value: 'fp16', label: 'FP16' }, { value: 'bf16', label: 'BF16' }, { value: 'fp8', label: 'FP8' }, { value: 'fp4', label: 'FP4' }]} onChange={(v) => setW((w) => { w.inference!.kvPrecision = v; })} hint={<Affects tags={['memory', 'bytes']} text={t('workload.h.kvPrecision')} t={t} />} />
                 </div>
               </Section>
             </>
@@ -588,7 +868,7 @@ export function WorkloadPanel() {
           </details>
         </div>
       ) : (
-        <Empty>{t('workload.empty')}</Empty>
+        <div style={{ gridColumn: '1 / -1' }}><Empty>{t('workload.empty')}</Empty></div>
       )}
 
       {/* ── D. benchmark calibration ── */}
@@ -638,21 +918,36 @@ export function WorkloadPanel() {
       {/* ── F. simulation result ── */}
       {wa && wl && (
         <div className="card" style={{ gridColumn: '1 / -1' }}>
-          <h3>{t('workload.res.title', { name: wl.name })}</h3>
+          <h3 className="row wrap" style={{ gap: 8 }}>
+            {t('workload.res.title', { name: wl.name })}
+            {inf && <>
+              <span className="grow" />
+              <button className="btn primary sm" disabled={paretoLoading} onClick={runPareto}><Icon name="workload" size={13} />{t(paretoLoading ? 'workload.pareto.running' : 'workload.pareto.run')}</button>
+              <button className="btn sm" onClick={() => document.getElementById('inferencex-calibration')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}>{t('workload.res.openInferenceX')}</button>
+            </>}
+          </h3>
+          {paretoError && <p className="caption"><StatusIcon severity="warning" /> {t('workload.pareto.error', { error: paretoError })}</p>}
+          {inf && Number(wa.details?.topologyOutsideScaleUp ?? 0) > 0 && (
+            <p className="caption"><StatusIcon severity="warning" /> {t('workload.res.outsideScaleUp')}</p>
+          )}
+          {inf && wl.calibration?.mode === 'inference' && Number(wa.details?.calibrationApplied ?? 0) === 0 && (
+            <p className="caption"><StatusIcon severity="warning" /> {t('workload.res.staleCalibration')}</p>
+          )}
           <div className="grid-4">
             <Stat label={t('workload.res.gpus')} value={fmtInt(wa.gpus)} />
             {wa.timeToTrainDays != null && <Stat label={t('workload.res.ttt')} value={days(wa.timeToTrainDays)} delta={<span><Term id="goodput">goodput</Term> {fmtPct(wa.goodput)}</span>} />}
             {wa.tokensPerSec != null && <Stat label={<Term id="tokens-per-sec">{t('workload.res.tput')}</Term>} value={`${fmtInt(wa.tokensPerSec)} tok/s`} delta={<span><Term id="mfu">MFU</Term> {fmtPct(wa.mfu)}{wl.calibration?.mode === 'training' ? ` · ${t('workload.badge.calibrated')}` : ''}</span>} />}
             {wa.stepTimeS != null && <Stat label={t('workload.res.step')} value={`${fmt2(wa.stepTimeS)} s`} delta={`${t('workload.res.stepDelta', { pct: fmtPct((wa.commTimeS ?? 0) / Math.max(1e-9, wa.stepTimeS)) })}${analysis?.network.traffic ? t('workload.res.effComm', { pct: fmtPct(analysis.network.traffic.commEfficiencyEffective) }) : ''}`} />}
-            {wa.gpusRequired != null && <Stat label={t('workload.res.sloGpus')} value={fmtInt(wa.gpusRequired)} delta={`${t('workload.res.maxRps', { rps: fmt1(wa.maxRequestsPerSec) })}${wl.calibration?.mode === 'inference' ? ` · ${t('workload.badge.calibrated')}` : ''}`} />}
+            {wa.gpusRequired != null && <Stat label={t('workload.res.sloGpus')} value={fmtInt(wa.gpusRequired)} delta={`${t('workload.res.maxRps', { rps: fmt1(wa.maxRequestsPerSec) })}${Number(wa.details?.calibrationApplied ?? 0) === 1 ? ` · ${t('workload.badge.calibrated')}` : ''}`} />}
+            {wa.totalTokensPerSec != null && <Stat label={t('workload.res.clusterTokens')} value={`${fmtInt(wa.totalTokensPerSec)} tok/s`} delta={wa.computedTokensPerSec != null && wa.computedTokensPerSec < wa.totalTokensPerSec ? t('workload.res.clusterOutputCached', { output: fmtInt(wa.outputTokensPerSec), computed: fmtInt(wa.computedTokensPerSec) }) : t('workload.res.clusterOutput', { tps: fmtInt(wa.outputTokensPerSec) })} />}
             {wa.ttftMs != null && <Stat label={t('workload.res.ttftTpot')} value={`${fmtInt(wa.ttftMs)} / ${fmtInt(wa.tpotMs)} ms`} />}
             {inf && wa.details && (inf.disaggregated ? (
               <>
-                <Stat label={t('workload.res.prefillTopology')} value={`TP${wa.details.prefillTp}/PP${wa.details.prefillPp}/EP${wa.details.prefillEp}/CP${wa.details.prefillCp}`} delta={t('workload.res.instances', { n: wa.details.prefillReplicas ?? 0, g: wa.details.prefillInstanceGpus ?? 0 })} />
-                <Stat label={t('workload.res.decodeTopology')} value={`TP${wa.details.decodeTp}/PP${wa.details.decodePp}/EP${wa.details.decodeEp}/CP${wa.details.decodeCp}`} delta={t('workload.res.instances', { n: wa.details.decodeReplicas ?? 0, g: wa.details.decodeInstanceGpus ?? 0 })} />
+                <Stat label={t('workload.res.prefillTopology')} value={`TP${wa.details.prefillTp}/PP${wa.details.prefillPp}/DP${wa.details.prefillReplicas}/EP${wa.details.prefillEp}/CP${wa.details.prefillCp}`} delta={`${t('workload.res.instancesRequired', { n: wa.details.prefillReplicas ?? 0, g: wa.details.prefillInstanceGpus ?? 0, required: wa.details.prefillRequiredReplicas ?? wa.details.prefillReplicas ?? 0 })} · ${t(`workload.parallel.mapping.${wa.details.prefillExpertMapping ?? 'shared'}`)}`} />
+                <Stat label={t('workload.res.decodeTopology')} value={`TP${wa.details.decodeTp}/PP${wa.details.decodePp}/DP${wa.details.decodeReplicas}/EP${wa.details.decodeEp}/CP${wa.details.decodeCp}`} delta={`${t('workload.res.instancesRequired', { n: wa.details.decodeReplicas ?? 0, g: wa.details.decodeInstanceGpus ?? 0, required: wa.details.decodeRequiredReplicas ?? wa.details.decodeReplicas ?? 0 })} · ${t(`workload.parallel.mapping.${wa.details.decodeExpertMapping ?? 'shared'}`)}`} />
               </>
             ) : (
-              <Stat label={t('workload.res.aggregatedTopology')} value={`TP${wa.details.decodeTp}/PP${wa.details.decodePp}/EP${wa.details.decodeEp}/CP${wa.details.decodeCp}`} delta={t('workload.res.instances', { n: wa.details.decodeReplicas ?? 0, g: wa.details.decodeInstanceGpus ?? 0 })} />
+              <Stat label={t('workload.res.aggregatedTopology')} value={`TP${wa.details.decodeTp}/PP${wa.details.decodePp}/DP${wa.details.decodeReplicas}/EP${wa.details.decodeEp}/CP${wa.details.decodeCp}`} delta={`${t('workload.res.instancesRequired', { n: wa.details.decodeReplicas ?? 0, g: wa.details.decodeInstanceGpus ?? 0, required: wa.details.decodeRequiredReplicas ?? wa.details.decodeReplicas ?? 0 })} · ${t(`workload.parallel.mapping.${wa.details.decodeExpertMapping ?? 'shared'}`)}`} />
             ))}
             <Stat label={t('workload.res.power')} value={fmtPower(wa.avgPowerKW)} delta={t('workload.res.peak', { p: fmtPower(wa.peakPowerKW) })} />
             <Stat label={t('workload.res.energy')} value={`${fmtInt(wa.energyMWh)} MWh`} delta={`${fmtMoney(wa.energyCostUSD, project.pricing)}${wa.tokensPerKWh ? ` · ${fmtInt(wa.tokensPerKWh)} tok/kWh` : ''}`} />
@@ -667,6 +962,8 @@ export function WorkloadPanel() {
               />
             </div>
           )}
+          {inf && <InferenceThroughputCharts inf={inf} wa={wa} t={t} />}
+          {inf && paretoReport && <InferenceWorkloadParetoCard report={paretoReport} t={t} />}
           {wa.powerTrace.length > 1 && (
             <div style={{ marginTop: 12 }}>
               <LineChart
@@ -691,13 +988,25 @@ export function WorkloadPanel() {
 // ───────────── benchmark calibration card ─────────────
 
 type CalMode = 'row' | 'user';
+type PerformanceCurveMetric = 'cluster' | 'efficiency' | 'per-gpu';
 
 function CalibrationCard({ wl, wa, gpuRack, setW, t, locale, notify }: {
   wl: WorkloadBlueprint; wa: WorkloadAnalysis | undefined; gpuRack: CatalogItem; setW: (fn: (w: WorkloadBlueprint) => void) => void;
   t: Translate; locale: 'en' | 'ko'; notify: (text: string, kind?: 'info' | 'error' | 'ok') => void;
 }) {
   const training = isTrainingKind(wl.kind);
-  const rows = useMemo(() => BENCHMARKS.filter((b) => (training ? !/inference/i.test(b.suite) : /inference/i.test(b.suite))), [training]);
+  const staticRows = useMemo(() => BENCHMARKS.filter((b) => (training ? !/inference/i.test(b.suite) : /inference/i.test(b.suite))), [training]);
+  const [liveRows, setLiveRows] = useState<BenchmarkRow[]>([]);
+  const [predictionReport, setPredictionReport] = useState<InferenceXPredictionReport>();
+  const [performanceCurves, setPerformanceCurves] = useState<InferenceXPerformanceCurveReport>();
+  const [performanceCurveMetric, setPerformanceCurveMetric] = useState<PerformanceCurveMetric>('cluster');
+  const [liveLoading, setLiveLoading] = useState(false);
+  const [liveError, setLiveError] = useState('');
+  const [cacheRows, setCacheRows] = useState<InferenceXCacheBenchmark[]>([]);
+  const [cacheLoading, setCacheLoading] = useState(false);
+  const [cacheError, setCacheError] = useState('');
+  const [cacheRowId, setCacheRowId] = useState(wl.inference?.prefixCacheTrace?.benchmarkId ?? '');
+  const rows = useMemo(() => [...liveRows, ...staticRows], [liveRows, staticRows]);
   const preferred = rows.find((b) => b.model === wl.presetId) ?? rows[0];
   const [mode, setMode] = useState<CalMode>('row');
   const [rowId, setRowId] = useState(wl.calibration?.benchmarkId ?? preferred?.id ?? '');
@@ -709,6 +1018,121 @@ function CalibrationCard({ wl, wa, gpuRack, setW, t, locale, notify }: {
   const [userLabel, setUserLabel] = useState('');
   const [override, setOverride] = useState(false);
   const row = rows.find((b) => b.id === rowId);
+  const inferenceXModel = inferenceXModelName(wl.presetId);
+
+  useEffect(() => {
+    setLiveRows([]);
+    setPredictionReport(undefined);
+    setPerformanceCurves(undefined);
+    setLiveError('');
+    setCacheRows([]);
+    setCacheError('');
+    setCacheRowId(wl.inference?.prefixCacheTrace?.benchmarkId ?? '');
+    setRowId(wl.calibration?.benchmarkId ?? staticRows.find((b) => b.model === wl.presetId)?.id ?? staticRows[0]?.id ?? '');
+  }, [wl.id, wl.presetId, gpuRack.id, staticRows]);
+
+  const loadInferenceX = async () => {
+    if (training || !wl.presetId || !wl.inference || !inferenceXModel) return;
+    setLiveLoading(true);
+    setLiveError('');
+    try {
+      const response = await api.inferenceXBenchmarks(wl.presetId);
+      const match = { presetId: wl.presetId, gpuRack, inference: wl.inference, targetAccelerators: wa?.gpus };
+      const report = predictInferenceXPerformance(response.rows, match);
+      const curves = inferenceXPerformanceCurves(response.rows, match);
+      const placedPrediction = report?.predictions.find((prediction) => prediction.placedHardware);
+      const predictedRow = report && placedPrediction ? inferenceXPredictionBenchmark(report, placedPrediction, wl.presetId) : undefined;
+      const ranked = rankInferenceXBenchmarks(response.rows, match);
+      const displayRows = predictedRow ? [predictedRow, ...ranked] : ranked;
+      setPredictionReport(report);
+      setPerformanceCurves(curves);
+      setLiveRows(displayRows);
+      // Keep a measured row selected by default. The derived estimate is available for explicit review/application.
+      if (ranked[0] ?? predictedRow) setRowId((ranked[0] ?? predictedRow)!.id);
+      const message = ranked.length ? t('workload.cal.inferenceXLoaded', { n: ranked.length, model: response.model }) : t('workload.cal.inferenceXEmpty');
+      notify(message, ranked.length ? 'ok' : 'info');
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      setLiveError(message);
+      notify(t('workload.cal.inferenceXFailed'), 'error');
+    } finally {
+      setLiveLoading(false);
+    }
+  };
+
+  const loadInferenceXCache = async () => {
+    if (training || !wl.presetId || !wl.inference || !inferenceXModel) return;
+    setCacheLoading(true);
+    setCacheError('');
+    try {
+      const response = await api.inferenceXAgenticBenchmarks(wl.presetId);
+      const ranked = rankInferenceXCacheBenchmarks(response.rows, { presetId: wl.presetId, gpuRack, inference: wl.inference });
+      setCacheRows(ranked);
+      if (ranked[0]) setCacheRowId(ranked[0].benchmarkId);
+      notify(ranked.length ? t('workload.cache.loaded', { n: ranked.length, model: response.model }) : t('workload.cache.empty'), ranked.length ? 'ok' : 'info');
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      setCacheError(message);
+      notify(t('workload.cache.failed'), 'error');
+    } finally {
+      setCacheLoading(false);
+    }
+  };
+
+  const selectedCache = cacheRows.find((x) => x.benchmarkId === cacheRowId);
+  const placedPrediction = predictionReport?.predictions.find((prediction) => prediction.placedHardware);
+  const frontierFor = (curve: InferenceXPerformanceCurveReport['curves'][number]) => performanceCurveMetric === 'cluster'
+    ? curve.clusterFrontier
+    : performanceCurveMetric === 'efficiency'
+      ? curve.efficiencyFrontier
+      : curve.throughputFrontier;
+  const performanceValue = (point: InferenceXPerformanceCurvePoint) => performanceCurveMetric === 'cluster'
+    ? point.projectedClusterOutputTokensPerSec
+    : performanceCurveMetric === 'efficiency'
+      ? point.outputTokensPerSecPerMW!
+      : point.outputTokensPerSecPerGpu;
+  const performanceCurveRows: InferenceXPerformanceCurvePoint[] = performanceCurves?.curves.flatMap(frontierFor)
+    .sort((a, b) => a.interactivityTokPerSecPerUser - b.interactivityTokPerSecPerUser) ?? [];
+  const cacheCurveRows = useMemo(() => {
+    const anchor = selectedCache ?? cacheRows[0];
+    if (!anchor) return [];
+    const matching = cacheRows.filter((x) => x.hardware === anchor.hardware
+      && x.framework === anchor.framework
+      && x.precision === anchor.precision
+      && x.disaggregated === anchor.disaggregated
+      && x.offloadMode === anchor.offloadMode
+      && x.concurrency != null);
+    const byConcurrency = new Map<number, InferenceXCacheBenchmark>();
+    for (const point of matching) if (!byConcurrency.has(point.concurrency!)) byConcurrency.set(point.concurrency!, point);
+    return [...byConcurrency.values()].sort((a, b) => a.concurrency! - b.concurrency!);
+  }, [cacheRows, selectedCache]);
+  const applyCache = () => {
+    if (!selectedCache) return;
+    setW((w) => {
+      if (!w.inference) return;
+      w.inference.prefixCacheTrace = {
+        benchmarkId: selectedCache.benchmarkId,
+        source: selectedCache.source,
+        sourceUrl: selectedCache.sourceUrl,
+        accelerator: selectedCache.accelerator,
+        framework: selectedCache.framework,
+        precision: selectedCache.precision,
+        concurrency: selectedCache.concurrency,
+        offloadMode: selectedCache.offloadMode,
+        gpuHitRate: selectedCache.gpuHitRate,
+        cpuHitRate: selectedCache.cpuHitRate,
+        externalHitRate: selectedCache.externalHitRate,
+        theoreticalHitRate: selectedCache.theoreticalHitRate,
+        outputTokensPerSecPerGpu: selectedCache.outputTokensPerSecPerGpu,
+        measuredAt: selectedCache.measuredAt,
+      };
+    });
+    notify(t('workload.cache.applied'), 'ok');
+  };
+  const clearCache = () => {
+    setW((w) => { if (w.inference) delete w.inference.prefixCacheTrace; });
+    notify(t('workload.cache.cleared'), 'info');
+  };
 
   const accOptions = useMemo(() => {
     const racks = catalogItems().filter((i) => i.category === 'gpu-rack' && (i.compute?.gpus ?? 0) > 0).map((i) => ({ value: i.id, label: i.name }));
@@ -733,7 +1157,7 @@ function CalibrationCard({ wl, wa, gpuRack, setW, t, locale, notify }: {
   const apply = () => {
     if (!result || !input || !canApply) return;
     setW((w) => {
-      const rec = calibrationRecord(result, input, scaleW ? [scaleW] : [], locale);
+      const rec = calibrationRecord(result, input, scaleW ? [scaleW] : [], locale, wl);
       rec.appliedAt = new Date().toISOString();
       if (kindBlock && override) rec.warnings = [...(rec.warnings ?? []), t('workload.cal.overrideNote')];
       w.calibration = rec;
@@ -747,10 +1171,10 @@ function CalibrationCard({ wl, wa, gpuRack, setW, t, locale, notify }: {
   };
 
   return (
-    <div className="card wl-form" style={{ gridColumn: '1 / -1' }}>
+    <div id="inferencex-calibration" className="card wl-form" style={{ gridColumn: '1 / -1', scrollMarginTop: 72 }}>
       <h3 className="row" style={{ gap: 8 }}>
         {t('workload.cal.title')}
-        {wl.calibration ? <span className="badge src-public-spec">{t('workload.badge.calibrated')}</span> : <span className="badge src-estimate">{t('workload.badge.uncalibrated')}</span>}
+        {wl.calibration ? <span className={`badge ${!training && wa && Number(wa.details?.calibrationApplied ?? 0) === 0 ? 'src-estimate' : 'src-public-spec'}`}>{t(!training && wa && Number(wa.details?.calibrationApplied ?? 0) === 0 ? 'workload.badge.staleCalibration' : 'workload.badge.calibrated')}</span> : <span className="badge src-estimate">{t('workload.badge.uncalibrated')}</span>}
       </h3>
       <p className="hint" style={{ marginTop: 0 }}>{training ? t('workload.cal.introTraining') : t('workload.cal.introInference')}</p>
 
@@ -768,6 +1192,7 @@ function CalibrationCard({ wl, wa, gpuRack, setW, t, locale, notify }: {
           {wl.calibration.conditions && <div className="hint" style={{ fontSize: 11.5 }}>{wl.calibration.conditions}</div>}
           {wl.calibration.transfer && <div className="hint" style={{ fontSize: 11.5 }}>{t('workload.cal.transferLabel')}: {wl.calibration.transfer}</div>}
           {wl.calibration.warnings?.map((w, i) => <div key={i} className="hint" style={{ fontSize: 11.5 }}><StatusIcon severity="warning" /> {w}</div>)}
+          {!training && wa && Number(wa.details?.calibrationApplied ?? 0) === 0 && <div className="hint" style={{ marginTop: 4 }}><StatusIcon severity="warning" /> {t('workload.res.staleCalibration')}</div>}
         </div>
       )}
 
@@ -777,9 +1202,17 @@ function CalibrationCard({ wl, wa, gpuRack, setW, t, locale, notify }: {
       <div className="fields-2">
         <div>
           {mode === 'row' ? (
-            <DataTable
-              maxHeight={300}
-              columns={[
+            <>
+              {!training && (
+                <div className="row wrap" style={{ gap: 8, marginBottom: 8 }}>
+                  <button className="btn sm" disabled={!inferenceXModel || liveLoading} onClick={loadInferenceX}><Icon name="refresh" size={13} />{liveLoading ? t('workload.cal.inferenceXLoading') : t('workload.cal.inferenceXLoad')}</button>
+                  <span className="hint">{inferenceXModel ? t('workload.cal.inferenceXHint', { model: inferenceXModel }) : t('workload.cal.inferenceXUnsupported')}</span>
+                </div>
+              )}
+              {liveError && <p className="caption"><StatusIcon severity="warning" /> {t('workload.cal.inferenceXError', { error: liveError })}</p>}
+              <DataTable
+                maxHeight={300}
+                columns={[
                 { key: 's', header: t('workload.cal.col.suite'), render: (b: BenchmarkRow) => <span title={b.task}>{b.suite.replace(' (datacenter, closed)', '').replace('SemiAnalysis InferenceX (formerly InferenceMAX)', 'InferenceX')} {b.round}</span> },
                 { key: 'm', header: t('workload.cal.col.model'), render: (b) => <span style={{ fontWeight: b.model === wl.presetId ? 600 : undefined }}>{b.model}</span> },
                 { key: 'y', header: t('workload.cal.col.system'), render: (b) => <span title={b.system}>{b.accelerator}</span> },
@@ -787,12 +1220,13 @@ function CalibrationCard({ wl, wa, gpuRack, setW, t, locale, notify }: {
                 { key: 'v', header: t('workload.cal.col.value'), num: true, render: (b) => `${fmt2(b.value)} ${b.unit}` },
                 { key: 'p', header: t('workload.cal.col.perGpu'), num: true, render: (b) => (b.derived?.tflopsPerGpu ? `${fmtInt(b.derived.tflopsPerGpu)} TF/s` : b.derived?.tokensPerSecPerGpu ? `${fmtInt(b.derived.outputTokensPerSecPerGpu ?? b.derived.tokensPerSecPerGpu)} tok/s` : '–') },
                 { key: 't', header: t('workload.cal.col.source'), render: (b) => <span className={`badge ${b.sourceType === 'vendor-claim' ? 'src-estimate' : 'src-public-spec'}`}>{t(`workload.src.${b.sourceType}`)}</span> },
-              ]}
-              rows={rows}
-              rowKey={(b) => b.id}
-              selectedKeys={row ? [row.id] : []}
-              onRowClick={(b) => { setRowId(b.id); setOverride(false); }}
-            />
+                ]}
+                rows={rows}
+                rowKey={(b) => b.id}
+                selectedKeys={row ? [row.id] : []}
+                onRowClick={(b) => { setRowId(b.id); setOverride(false); }}
+              />
+            </>
           ) : (
             <div className="fields-2">
               <NumberField label={training ? t('workload.cal.userTps') : t('workload.cal.userOutTps')} unit="tok/s" step={1000} min={0} value={userTps} onChange={setUserTps} />
@@ -849,6 +1283,236 @@ function CalibrationCard({ wl, wa, gpuRack, setW, t, locale, notify }: {
           )}
         </div>
       </div>
+      {!training && predictionReport && (
+        <div className="card" style={{ background: 'var(--surface-2)', marginTop: 12 }}>
+          <div className="row wrap" style={{ gap: 8 }}>
+            <h3 style={{ margin: 0 }}>{t('workload.pred.title')}</h3>
+            <span className="badge src-estimate">{t('workload.pred.derived')}</span>
+          </div>
+          <p className="hint">{t('workload.pred.intro')}</p>
+          <p className="caption">{t('workload.pred.target', {
+            model: predictionReport.model,
+            precision: predictionReport.precision.toUpperCase(),
+            mode: t(`workload.pred.mode.${predictionReport.servingMode}`),
+            isl: fmtInt(predictionReport.target.isl),
+            osl: fmtInt(predictionReport.target.osl),
+            intv: fmt1(predictionReport.target.interactivityTokPerSecPerUser),
+            tp: predictionReport.target.tp,
+            ep: predictionReport.target.ep,
+          })}</p>
+          {predictionReport.target.accelerators ? <p className="caption">{t('workload.pred.clusterScale', { n: fmtInt(predictionReport.target.accelerators) })}</p> : null}
+          <DataTable
+            maxHeight={280}
+            columns={[
+              { key: 'g', header: t('workload.pred.col.gpu'), render: (prediction: InferenceXHardwarePrediction) => <span style={{ fontWeight: prediction.placedHardware ? 700 : undefined }}>{prediction.accelerator}{prediction.placedHardware ? ` · ${t('workload.pred.placed')}` : ''}</span> },
+              { key: 'p', header: t('workload.pred.col.predicted'), num: true, render: (prediction) => prediction.predictedOutputTokensPerSecPerGpu == null ? '–' : `${fmtInt(prediction.predictedOutputTokensPerSecPerGpu)} tok/s/GPU` },
+              { key: 'r', header: t('workload.pred.col.band'), num: true, render: (prediction) => prediction.lowerOutputTokensPerSecPerGpu == null || prediction.upperOutputTokensPerSecPerGpu == null ? '–' : `${fmtInt(prediction.lowerOutputTokensPerSecPerGpu)}–${fmtInt(prediction.upperOutputTokensPerSecPerGpu)}` },
+              { key: 'e', header: t('workload.pred.col.evidence'), num: true, render: (prediction) => t('workload.pred.evidenceCount', { groups: prediction.conditionGroups, rows: prediction.measuredRows }) },
+              { key: 'v', header: t('workload.pred.col.validation'), num: true, render: (prediction) => prediction.validationMedianAbsolutePercentageError == null ? t('workload.pred.noValidation') : t('workload.pred.validationValue', { median: fmtPct(prediction.validationMedianAbsolutePercentageError, 1), p90: fmtPct(prediction.validationP90AbsolutePercentageError, 1), n: prediction.validationCases }) },
+              { key: 'q', header: t('workload.pred.col.coverage'), render: (prediction) => <span className={`badge ${prediction.quality === 'measured-near' || prediction.quality === 'interpolated' ? 'src-public-spec' : 'src-estimate'}`}>{t(`workload.pred.quality.${prediction.quality}`)}</span> },
+            ]}
+            rows={predictionReport.predictions}
+            rowKey={(prediction) => prediction.hardware}
+          />
+          {performanceCurves && (
+            <div id="inferencex-performance" className="card" style={{ background: 'var(--surface-1)', marginTop: 12, scrollMarginTop: 72 }}>
+              <div className="row wrap" style={{ gap: 8 }}>
+                <h4 style={{ margin: 0 }}>{t('workload.curve.title')}</h4>
+                <span className="badge src-public-spec">{t('workload.curve.measured')}</span>
+                <span className="grow" />
+                <Seg
+                  value={performanceCurveMetric}
+                  options={[
+                    { value: 'cluster', label: t('workload.curve.metric.cluster') },
+                    { value: 'efficiency', label: t('workload.curve.metric.efficiency') },
+                    { value: 'per-gpu', label: t('workload.curve.metric.perGpu') },
+                  ]}
+                  onChange={setPerformanceCurveMetric}
+                />
+              </div>
+              <p className="hint">{t('workload.curve.intro')}</p>
+              <p className="caption">{t('workload.curve.sweepAxes', {
+                ptp: performanceCurves.sweepAxes.prefillTp.join('/'), pep: performanceCurves.sweepAxes.prefillEp.join('/'),
+                pdpa: performanceCurves.sweepAxes.prefillDpAttention.map((value) => t(value ? 'workload.curve.on' : 'workload.curve.off')).join('/'),
+                pw: performanceCurves.sweepAxes.prefillWorkers.join('/') || '–', ppool: performanceCurves.sweepAxes.prefillGpuCounts.join('/') || '–',
+                dtp: performanceCurves.sweepAxes.decodeTp.join('/'), dep: performanceCurves.sweepAxes.decodeEp.join('/'),
+                ddpa: performanceCurves.sweepAxes.decodeDpAttention.map((value) => t(value ? 'workload.curve.on' : 'workload.curve.off')).join('/'),
+                dw: performanceCurves.sweepAxes.decodeWorkers.join('/') || '–', dpool: performanceCurves.sweepAxes.decodeGpuCounts.join('/') || '–',
+                conc: performanceCurves.sweepAxes.concurrency.length, spec: performanceCurves.sweepAxes.specMethods.join('/'),
+              })}</p>
+              {performanceCurves.targetAccelerators ? <p className="caption">{t('workload.curve.clusterProjection', { gpus: fmtInt(performanceCurves.targetAccelerators) })}</p> : null}
+              <div className="row wrap" style={{ gap: 6, marginBottom: 8 }}>
+                {performanceCurves.curves.map((curve) => (
+                  <span key={curve.servingMode} className="badge">
+                    {t(`workload.pred.mode.${curve.servingMode}`)} · ISL {fmtInt(curve.isl)} / OSL {fmtInt(curve.osl)} · {curve.exactTargetShape ? t('workload.curve.exact') : t('workload.curve.nearest')}
+                  </span>
+                ))}
+              </div>
+              {performanceCurves.curves.length > 1 && !performanceCurves.directlyComparable && (
+                <p className="caption"><StatusIcon severity="warning" /> {t('workload.curve.shapeWarning')}</p>
+              )}
+              {performanceCurves.curves.length === 1 && (
+                <p className="caption"><StatusIcon severity="info" /> {t('workload.curve.singleMode')}</p>
+              )}
+              {performanceCurves.curves.length > 1 && (
+                <p className="caption"><StatusIcon severity="info" /> {t('workload.curve.modeCaveat')}</p>
+              )}
+              {performanceCurveMetric === 'efficiency' && performanceCurves.curves.some((curve) => curve.efficiencyFrontier.length === 0) && (
+                <p className="caption"><StatusIcon severity="info" /> {t('workload.curve.partialPower', {
+                  modes: performanceCurves.curves.filter((curve) => curve.efficiencyFrontier.length === 0).map((curve) => t(`workload.pred.mode.${curve.servingMode}`)).join(', '),
+                })}</p>
+              )}
+              {performanceCurveRows.length > 0 ? (
+                <LineChart
+                  title={performanceCurveMetric === 'cluster' ? t('workload.curve.chartCluster') : performanceCurveMetric === 'efficiency' ? t('workload.curve.chartEfficiency') : t('workload.curve.chartPerGpu')}
+                  series={performanceCurves.curves.map((curve) => ({
+                    key: curve.servingMode,
+                    name: t(`workload.pred.mode.${curve.servingMode}`),
+                    color: curve.servingMode === 'aggregated' ? '#5b8def' : '#64c78b',
+                    points: frontierFor(curve).map((point) => ({
+                      x: point.interactivityTokPerSecPerUser,
+                      y: performanceValue(point),
+                    })),
+                  })).filter((series) => series.points.length > 0)}
+                  height={280}
+                  xFormat={(value) => t('workload.curve.xValue', { n: fmt1(value) })}
+                  yFormat={(value) => performanceCurveMetric === 'cluster' ? `${fmtInt(value)} tok/s` : performanceCurveMetric === 'efficiency' ? fmtTokensPerMW(value) : `${fmtInt(value)} tok/s/GPU`}
+                  yMin={0}
+                  xRefLines={[{ x: 1000 / Math.max(1, wl.inference?.tpotSloMs ?? 1), label: t('workload.curve.targetSlo') }]}
+                  showPoints
+                />
+              ) : (
+                <Empty>{t(performanceCurveMetric === 'cluster' ? 'workload.curve.noFeasible' : 'workload.curve.noPower')}</Empty>
+              )}
+              {performanceCurveRows.length > 0 && (
+                <details style={{ marginTop: 10 }}>
+                  <summary className="secondary" style={{ cursor: 'pointer' }}>{t('workload.curve.pointsTitle', { n: performanceCurveRows.length })}</summary>
+                  <p className="caption">{t('workload.curve.pointsIntro')}</p>
+                  <DataTable
+                    maxHeight={300}
+                    columns={[
+                      { key: 'm', header: t('workload.curve.col.mode'), render: (point: InferenceXPerformanceCurvePoint) => t(`workload.pred.mode.${point.servingMode}`) },
+                      { key: 'i', header: t('workload.curve.col.interactivity'), num: true, render: (point) => `${fmt1(point.interactivityTokPerSecPerUser)} tok/s/user` },
+                      { key: 'v', header: performanceCurveMetric === 'cluster' ? t('workload.curve.col.cluster') : performanceCurveMetric === 'efficiency' ? t('workload.curve.col.efficiency') : t('workload.curve.col.perGpu'), num: true, render: (point) => performanceCurveMetric === 'cluster' ? `${fmtInt(point.projectedClusterOutputTokensPerSec)} tok/s` : performanceCurveMetric === 'efficiency' && point.outputTokensPerSecPerMW != null ? fmtTokensPerMW(point.outputTokensPerSecPerMW) : `${fmtInt(point.outputTokensPerSecPerGpu)} tok/s/GPU` },
+                      { key: 'd', header: t('workload.curve.col.decodePerGpu'), num: true, render: (point) => `${fmtInt(point.decodeOutputTokensPerSecPerGpu)} tok/s` },
+                      { key: 's', header: 'ISL / OSL', render: (point) => `${fmtInt(point.isl)} / ${fmtInt(point.osl)}` },
+                      { key: 't', header: t('workload.curve.col.topology'), render: (point) => point.servingMode === 'disaggregated'
+                        ? `P TP${point.prefillTp}/EP${point.prefillEp}/W${point.prefillWorkers}${point.prefillDpAttention ? '/DPA' : ''} (${point.prefillGpus || '–'}G) · D TP${point.decodeTp}/EP${point.decodeEp}/W${point.decodeWorkers}${point.decodeDpAttention ? '/DPA' : ''} (${point.decodeGpus || '–'}G)`
+                        : `TP${point.decodeTp}/EP${point.decodeEp} · ${Math.max(point.prefillGpus, point.decodeGpus) || '–'} GPU` },
+                      { key: 'a', header: t('workload.curve.col.placement'), render: (point) => t('workload.curve.placement', { unit: point.deploymentGpus, copies: point.deploymentCopies, used: point.placedGpus, idle: point.idleGpus }) },
+                      { key: 'c', header: t('workload.curve.col.concurrency'), num: true, render: (point) => point.concurrency ?? '–' },
+                      { key: 'f', header: t('workload.curve.col.framework'), render: (point) => `${point.framework}${point.specMethod ? ` · ${point.specMethod}` : ''}` },
+                      { key: 'p', header: t('workload.curve.col.power'), num: true, render: (point) => point.powerWPerGpu == null ? '–' : `${fmtInt(point.powerWPerGpu)} W/GPU` },
+                      { key: 'r', header: t('workload.curve.col.source'), render: (point) => <ExternalLink href={point.sourceUrl}>{point.repetitions > 1 ? t('workload.curve.runs', { n: point.repetitions }) : t('workload.curve.run')}</ExternalLink> },
+                    ]}
+                    rows={performanceCurveRows}
+                    rowKey={(point) => `${point.servingMode}-${point.id}`}
+                  />
+                </details>
+              )}
+              <p className="caption" style={{ marginBottom: 0 }}>{t('workload.curve.caveat')}</p>
+            </div>
+          )}
+          {placedPrediction?.holdout.length ? (
+            <details style={{ marginTop: 10 }}>
+              <summary className="secondary" style={{ cursor: 'pointer' }}>{t('workload.pred.holdoutTitle', { n: placedPrediction.holdout.length })}</summary>
+              <p className="caption">{t('workload.pred.holdoutIntro')}</p>
+              <DataTable
+                maxHeight={260}
+                columns={[
+                  { key: 'c', header: t('workload.pred.col.condition'), render: (validation: typeof placedPrediction.holdout[number]) => `${validation.framework} · ISL ${fmtInt(validation.isl)} / OSL ${fmtInt(validation.osl)}${validation.interactivityTokPerSecPerUser ? ` · ${fmt1(validation.interactivityTokPerSecPerUser)} tok/s/user` : ''}` },
+                  { key: 'm', header: t('workload.pred.col.measured'), num: true, render: (validation) => fmtInt(validation.measuredOutputTokensPerSecPerGpu) },
+                  { key: 'p', header: t('workload.pred.col.heldoutPredicted'), num: true, render: (validation) => fmtInt(validation.predictedOutputTokensPerSecPerGpu) },
+                  { key: 'e', header: t('workload.pred.col.error'), num: true, render: (validation) => fmtPct(validation.absolutePercentageError, 1) },
+                ]}
+                rows={placedPrediction.holdout}
+                rowKey={(validation) => validation.conditionKey}
+              />
+            </details>
+          ) : null}
+          <p className="caption" style={{ marginBottom: 0 }}>
+            <strong>{t('workload.pred.creditLabel')}:</strong> {t('workload.pred.credit')} · <ExternalLink href="https://inferencex.semianalysis.com/">{t('workload.pred.dashboard')}</ExternalLink> · <ExternalLink href="https://github.com/SemiAnalysisAI/InferenceX">{t('workload.pred.repository')}</ExternalLink><br />
+            {t('workload.pred.method')}
+          </p>
+        </div>
+      )}
+      {!training && wl.inference && (
+        <div className="card" style={{ background: 'var(--surface-2)', marginTop: 12 }}>
+          <div className="row wrap" style={{ gap: 8 }}>
+            <h3 style={{ margin: 0 }}>{t('workload.cache.title')}</h3>
+            {wl.inference.prefixCacheTrace && <span className="badge src-public-spec">{t('workload.cache.appliedBadge')}</span>}
+            <span className="grow" />
+            {wl.inference.prefixCacheTrace && <button className="btn sm" onClick={clearCache}>{t('workload.cache.clear')}</button>}
+          </div>
+          <p className="hint">{t('workload.cache.intro')}</p>
+          {wl.inference.prefixCacheTrace && (
+            <p className="caption">
+              <strong>{wl.inference.prefixCacheTrace.source}</strong> · {wl.inference.prefixCacheTrace.accelerator} · {t('workload.cache.concurrency', { n: wl.inference.prefixCacheTrace.concurrency ?? '–' })} · {t('workload.cache.rates', {
+                gpu: fmtPct(wl.inference.prefixCacheTrace.gpuHitRate, 1),
+                remote: fmtPct(Math.max(wl.inference.prefixCacheTrace.cpuHitRate ?? 0, wl.inference.prefixCacheTrace.externalHitRate ?? 0), 1),
+              })}
+            </p>
+          )}
+          <div className="row wrap" style={{ gap: 8, marginBottom: 8 }}>
+            <button className="btn sm" disabled={!inferenceXModel || cacheLoading} onClick={loadInferenceXCache}><Icon name="refresh" size={13} />{cacheLoading ? t('workload.cache.loading') : t('workload.cache.load')}</button>
+            <span className="hint">{inferenceXModel ? t('workload.cache.hint', { model: inferenceXModel }) : t('workload.cal.inferenceXUnsupported')}</span>
+          </div>
+          {cacheError && <p className="caption"><StatusIcon severity="warning" /> {t('workload.cal.inferenceXError', { error: cacheError })}</p>}
+          {cacheRows.length > 0 && (
+            <>
+              <DataTable
+                maxHeight={260}
+                columns={[
+                  { key: 'a', header: t('workload.cal.col.system'), render: (r: InferenceXCacheBenchmark) => <span title={`${r.framework ?? ''} ${r.precision ?? ''}`}>{r.accelerator}</span> },
+                  { key: 'c', header: t('workload.cache.col.concurrency'), num: true, render: (r) => r.concurrency ?? '–' },
+                  { key: 'g', header: t('workload.cache.col.gpu'), num: true, render: (r) => fmtPct(r.gpuHitRate, 1) },
+                  { key: 'h', header: t('workload.cache.col.host'), num: true, render: (r) => fmtPct(Math.max(r.cpuHitRate ?? 0, r.externalHitRate ?? 0), 1) },
+                  { key: 't', header: t('workload.cache.col.theoretical'), num: true, render: (r) => r.theoreticalHitRate == null ? '–' : fmtPct(r.theoreticalHitRate, 1) },
+                  { key: 'o', header: t('workload.cache.col.output'), num: true, render: (r) => r.outputTokensPerSecPerGpu == null ? '–' : fmtInt(r.outputTokensPerSecPerGpu) },
+                ]}
+                rows={cacheRows}
+                rowKey={(r) => r.benchmarkId}
+                selectedKeys={selectedCache ? [selectedCache.benchmarkId] : []}
+                onRowClick={(r) => setCacheRowId(r.benchmarkId)}
+              />
+              {cacheCurveRows.length > 1 && (
+                <div className="grid-2" style={{ marginTop: 10 }}>
+                  <LineChart
+                    title={t('workload.cache.hitCurve')}
+                    series={[
+                      { key: 'gpu', name: t('workload.cache.col.gpu'), points: cacheCurveRows.map((r) => ({ x: r.concurrency!, y: r.gpuHitRate * 100 })) },
+                      { key: 'effective', name: t('workload.cache.effectiveHit'), points: cacheCurveRows.map((r) => ({ x: r.concurrency!, y: Math.min(1, r.gpuHitRate + Math.max(r.cpuHitRate ?? 0, r.externalHitRate ?? 0)) * 100 })) },
+                    ]}
+                    height={210}
+                    xFormat={(v) => t('workload.cache.usersAxis', { n: fmtInt(v) })}
+                    yFormat={(v) => `${fmt1(v)}%`}
+                    yMin={0}
+                    yMax={100}
+                  />
+                  {cacheCurveRows.some((r) => r.outputTokensPerSecPerGpu != null) && (
+                    <LineChart
+                      title={t('workload.cache.outputCurve')}
+                      series={[{ key: 'output', name: t('workload.cache.col.output'), points: cacheCurveRows.filter((r) => r.outputTokensPerSecPerGpu != null).map((r) => ({ x: r.concurrency!, y: r.outputTokensPerSecPerGpu! })) }]}
+                      height={210}
+                      xFormat={(v) => t('workload.cache.usersAxis', { n: fmtInt(v) })}
+                      yFormat={(v) => `${fmtInt(v)} tok/s/GPU`}
+                      yMin={0}
+                    />
+                  )}
+                </div>
+              )}
+              {selectedCache && (
+                <div className="row wrap" style={{ gap: 8, marginTop: 8 }}>
+                  <span className="caption">{selectedCache.framework ?? '–'} · {selectedCache.precision ?? '–'} · {selectedCache.disaggregated ? t('workload.serving.disaggregated') : t('workload.serving.aggregated')}{selectedCache.offloadMode ? ` · offload ${selectedCache.offloadMode}` : ''} · <ExternalLink href={selectedCache.sourceUrl ?? ''}>{t('workload.cal.sourceLink')}</ExternalLink></span>
+                  <span className="grow" />
+                  <button className="btn primary" onClick={applyCache}><Icon name="check" size={13} />{t('workload.cache.apply')}</button>
+                </div>
+              )}
+            </>
+          )}
+          <p className="caption" style={{ marginBottom: 0 }}>{t('workload.cache.caveat')}</p>
+        </div>
+      )}
     </div>
   );
 }

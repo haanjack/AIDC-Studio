@@ -863,7 +863,7 @@ export interface NetworkDesign {
 
 export type WorkloadKind = 'llm-pretrain' | 'llm-finetune' | 'llm-inference' | 'hpc-simulation';
 
-/** Model-parallel topology of one inference replica. Data parallelism is the number of replicas and is derived by the simulator. */
+/** Inference topology. TP/PP/EP/CP describe one replica; optional DP fixes the number of replicas in that stage pool. */
 export interface InferenceParallelism {
   /** tensor-parallel degree */
   tp: number;
@@ -871,8 +871,35 @@ export interface InferenceParallelism {
   pp: number;
   /** expert-parallel degree (MoE only) */
   ep: number;
+  /**
+   * How TP and EP map onto physical workers. Most serving engines run both collectives over the same worker group;
+   * an orthogonal grid is available for deployments that really allocate TP × EP workers.
+   */
+  expertMapping?: 'shared' | 'orthogonal';
   /** context-parallel degree */
   cp: number;
+  /** data-parallel replica count for this stage; omitted means auto-size from the placed GPU pool and workload */
+  dp?: number;
+}
+
+/** Measured prefix-cache behaviour from a replayed request trace. Kept separate from decode-throughput calibration. */
+export interface InferencePrefixCacheTrace {
+  benchmarkId: string;
+  source: string;
+  sourceUrl?: string;
+  accelerator: string;
+  framework?: string;
+  precision?: string;
+  concurrency?: number;
+  offloadMode?: string;
+  gpuHitRate: number;
+  /** Host-memory cache hit reported by the serving backend. */
+  cpuHitRate?: number;
+  /** External-cache hit. It may overlap with the CPU/host tier and is therefore not blindly added to it. */
+  externalHitRate?: number;
+  theoreticalHitRate?: number;
+  outputTokensPerSecPerGpu?: number;
+  measuredAt?: string;
 }
 
 export interface WorkloadBlueprint {
@@ -952,6 +979,13 @@ export interface WorkloadBlueprint {
   inference?: {
     requestsPerSec: number;
     inputTokens: number;
+    /**
+     * Leading input tokens whose KV is already warm and reusable for each request.
+     * They still occupy KV-cache memory, but do not repeat prefill compute or warm-cache P/D transfer.
+     */
+    cachedPrefixTokens?: number;
+    /** Agentic-trace cache calibration. When present, measured tier hit rates supersede the fixed cached-prefix scenario. */
+    prefixCacheTrace?: InferencePrefixCacheTrace;
     outputTokens: number;
     ttftSloMs: number;
     tpotSloMs: number;
@@ -992,6 +1026,8 @@ export interface WorkloadBlueprint {
     sourceType?: EvidenceSourceType | 'user';
     /** conditions (suite · round · system · G · parallelism · batch) and the transfer assumption, for display */
     conditions?: string;
+    /** workload/model/serving conditions at application time; prevents silently reusing a stale inference calibration */
+    workloadSignature?: string;
     transfer?: string;
     warnings?: string[];
     appliedAt?: string;
@@ -1476,6 +1512,18 @@ export interface TrafficPhysicalEnvelope {
   scaleUpBusbwFactor: number;
   /** Aggregate NIC bandwidth after host bus-bandwidth efficiency. */
   scaleOutEffectiveGBpsPerGpu: number;
+  /** NIC ports attached to one accelerator. Their line rate, not the switch port rate, bounds one GPU endpoint. */
+  scaleOutNicPortsPerGpu: number;
+  scaleOutNicPortGbps: number;
+  /** Aggregate raw NIC line rate (NIC ports × port Gb/s ÷ 8). */
+  scaleOutRawGBpsPerGpu: number;
+  /** Leaf switch actually used by the calculated scale-out plan. */
+  scaleOutSwitchName?: string;
+  /** Physical switch-port line rate; e.g. 800 Gb/s = 100 GB/s. */
+  scaleOutSwitchPortGbps: number;
+  scaleOutSwitchRawGBps: number;
+  /** Fractional values represent breakout/consolidation, e.g. 0.5 for one 400G NIC port on an 800G switch port. */
+  scaleOutSwitchPortsPerGpu: number;
   scaleOutFabric?: FabricTech;
 }
 
@@ -1542,6 +1590,9 @@ export interface TrafficReport {
   inference?: {
     kvBytesPerToken: number;
     kvTransferGbps: number;
+    remoteCacheTransferGbps?: number;
+    gpuCacheHitRate?: number;
+    remoteCacheHitRate?: number;
     epDecodeTokPerSPerUser: number;
     attention: 'gqa' | 'mla';
     requestsPerSec?: number;
@@ -1549,6 +1600,8 @@ export interface TrafficReport {
     decodeTokensPerSec?: number;
     allocatedGpus?: number;
     replicas?: number;
+    prefillReplicas?: number;
+    decodeReplicas?: number;
     disaggregated?: boolean;
     prefillParallelism?: InferenceParallelism;
     decodeParallelism?: InferenceParallelism;
@@ -1848,6 +1901,18 @@ export interface WorkloadAnalysis {
   goodput?: number; // after failures & checkpoints
   // inference
   maxRequestsPerSec?: number;
+  /** Requests actually served by the GPUs allocated to this workload. */
+  servedRequestsPerSec?: number;
+  /** Output-token demand before the allocated-cluster capacity limit is applied. */
+  requestedOutputTokensPerSec?: number;
+  /** Output tokens actually served by the allocated cluster. */
+  outputTokensPerSec?: number;
+  /** Logical input + output tokens delivered for requests served by the allocated cluster. */
+  totalTokensPerSec?: number;
+  /** Uncached input + output tokens newly computed by the allocated cluster. */
+  computedTokensPerSec?: number;
+  /** Output-token capacity at the allocated-cluster request limit. */
+  outputCapacityTokensPerSec?: number;
   ttftMs?: number;
   tpotMs?: number;
   gpusRequired?: number;

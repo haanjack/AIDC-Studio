@@ -19,7 +19,7 @@ import { polylineInside, rowGroupsFromEquipment } from '../layout/rows.ts';
 import { findLayoutTemplate } from '../layout/templates/index.ts';
 import { coolingLoopIssues, coolingLoopsFor } from '../layout/coolingPlacement.ts'; // T1: gallery CDU loop budget
 import { shareIssues } from '../workload/shares.ts'; // T6: workload-share-over
-import { inferenceMemoryEstimate, inferenceParallelismFor, inferenceReplicaGpus } from '../workload/inference.ts';
+import { inferenceExpertCollectiveGpus, inferenceMemoryEstimate, inferenceParallelismFor, inferenceReplicaGpus } from '../workload/inference.ts';
 import { standardsCheckIssues } from './standardsChecks.ts'; // stream C (P3): RK / PW / CL / NW / FC parameter checks
 
 interface Inputs {
@@ -252,6 +252,41 @@ export function validateProjectCtx(ctx: Ctx, r: Inputs): Issue[] {
     }
     if (bp.inference) {
       const inf = bp.inference;
+      const requestTokens = inf.inputTokens + inf.outputTokens;
+      const cachedPrefixTokens = inf.cachedPrefixTokens ?? 0;
+      if (cachedPrefixTokens < 0 || cachedPrefixTokens > inf.inputTokens) add({
+        id: `workload-inference-prefix-cache-${wl.workloadId}`,
+        severity: 'warning',
+        domain: 'workload',
+        message: `${bp.name}: cached prefix ${cachedPrefixTokens.toLocaleString('en-US')} 토큰이 입력 ${inf.inputTokens.toLocaleString('en-US')} 토큰 범위(0∼입력)를 벗어납니다.`,
+        suggestion: 'Cached prefix를 0 이상, 입력 토큰 이하로 조정하세요.',
+        messageEn: `${bp.name}: cached prefix ${cachedPrefixTokens.toLocaleString('en-US')} is outside the valid range 0–${inf.inputTokens.toLocaleString('en-US')} input tokens.`,
+        suggestionEn: 'Set the cached prefix between zero and the input-token count.',
+      });
+      if (inf.prefixCacheTrace) {
+        const trace = inf.prefixCacheTrace;
+        const invalid = [trace.gpuHitRate, trace.cpuHitRate, trace.externalHitRate, trace.theoreticalHitRate]
+          .filter((v): v is number => v !== undefined)
+          .some((v) => !Number.isFinite(v) || v < 0 || v > 1);
+        if (invalid) add({
+          id: `workload-inference-trace-cache-${wl.workloadId}`,
+          severity: 'warning',
+          domain: 'workload',
+          message: `${bp.name}: trace cache hit rate가 유효 범위 0∼1을 벗어납니다.`,
+          suggestion: 'AgentX trace 보정을 다시 선택하거나 잘못된 값을 제거하세요.',
+          messageEn: `${bp.name}: a trace cache-hit rate is outside the valid range 0–1.`,
+          suggestionEn: 'Select the AgentX trace calibration again or remove the invalid value.',
+        });
+      }
+      if (requestTokens > bp.model.seqLen) add({
+        id: `workload-inference-context-${wl.workloadId}`,
+        severity: 'warning',
+        domain: 'workload',
+        message: `${bp.name}: 실제 요청 컨텍스트 ${requestTokens.toLocaleString('en-US')} 토큰(입력+출력)이 설정된 모델 컨텍스트 한도 ${bp.model.seqLen.toLocaleString('en-US')} 토큰을 넘습니다.`,
+        suggestion: '입력/출력 토큰을 줄이거나, 배포할 모델과 서빙 백엔드가 지원하는 컨텍스트 한도를 확인해 수정하세요.',
+        messageEn: `${bp.name}: the actual request context of ${requestTokens.toLocaleString('en-US')} tokens (input + output) exceeds the configured model context limit of ${bp.model.seqLen.toLocaleString('en-US')} tokens.`,
+        suggestionEn: 'Reduce input/output tokens, or verify and update the context limit supported by the deployed model and serving backend.',
+      });
       const stages = inf.disaggregated
         ? ([['prefill', inferenceParallelismFor(inf, 'prefill')], ['decode', inferenceParallelismFor(inf, 'decode')]] as const)
         : ([['aggregated', inferenceParallelismFor(inf, 'aggregated')]] as const);
@@ -274,7 +309,8 @@ export function validateProjectCtx(ctx: Ctx, r: Inputs): Issue[] {
         if (!bp.model.moe && p.ep > 1) add({ id: `workload-inference-dense-ep-${wl.workloadId}-${stage}`, severity: 'warning', domain: 'workload', message: `${bp.name}: ${stage}가 Dense 모델에 EP ${p.ep}를 사용합니다. EP는 가중치를 나누지 않아 ${group} GPU 인스턴스의 자원만 증가합니다.`, suggestion: 'EP를 1로 두고 TP/PP로 모델을 샤딩하세요.', messageEn: `${bp.name}: ${stage} uses EP ${p.ep} for a dense model. EP does not shard its weights and only increases the ${group}-GPU instance.`, suggestionEn: 'Set EP to 1 and use TP/PP for model sharding.' });
         if (bp.model.moe && p.ep > bp.model.moe.experts) add({ id: `workload-inference-ep-experts-${wl.workloadId}-${stage}`, severity: 'warning', domain: 'workload', message: `${bp.name}: ${stage} EP ${p.ep}가 라우팅 전문가 ${bp.model.moe.experts}개보다 큽니다.`, suggestion: 'EP를 전문가 수 이하로 조정하세요.', messageEn: `${bp.name}: ${stage} EP ${p.ep} exceeds the ${bp.model.moe.experts} routed experts.`, suggestionEn: 'Set EP no higher than the expert count.' });
         if (bp.model.moe && bp.model.moe.experts % p.ep !== 0) add({ id: `workload-inference-ep-div-${wl.workloadId}-${stage}`, severity: 'info', domain: 'workload', message: `${bp.name}: 전문가 ${bp.model.moe.experts}개가 ${stage} EP ${p.ep}에 균등 분할되지 않습니다.`, suggestion: '프레임워크가 불균등 전문가 배치를 지원하는지 확인하거나 EP를 약수로 정하세요.', messageEn: `${bp.name}: ${bp.model.moe.experts} experts do not divide evenly across ${stage} EP ${p.ep}.`, suggestionEn: 'Verify uneven expert placement support or choose an EP divisor.' });
-        if (domain > 0 && p.tp * p.ep > domain) add({ id: `workload-inference-scaleout-${wl.workloadId}-${stage}`, severity: 'warning', domain: 'network', message: `${bp.name}: ${stage} TP×EP ${p.tp * p.ep}가 scale-up 도메인 ${domain} GPU를 넘어 all-reduce/all-to-all 일부가 scale-out으로 흐릅니다.`, suggestion: 'TP×EP를 scale-up 도메인 안에 두거나 scale-out 대역폭과 지연을 검증하세요.', messageEn: `${bp.name}: ${stage} TP×EP ${p.tp * p.ep} exceeds the ${domain}-GPU scale-up domain, so some all-reduce/all-to-all traffic uses scale-out.`, suggestionEn: 'Keep TP×EP inside the scale-up domain or validate scale-out bandwidth and latency.' });
+        const epGroup = inferenceExpertCollectiveGpus(p);
+        if (domain > 0 && (p.tp > domain || epGroup > domain)) add({ id: `workload-inference-scaleout-${wl.workloadId}-${stage}`, severity: 'warning', domain: 'network', message: `${bp.name}: ${stage}의 TP ${p.tp} 또는 EP collective ${epGroup} GPU가 scale-up 도메인 ${domain} GPU를 넘어 일부 통신이 scale-out으로 흐릅니다.`, suggestion: '각 collective를 scale-up 도메인 안에 두거나 scale-out 대역폭과 지연을 검증하세요.', messageEn: `${bp.name}: ${stage} TP ${p.tp} or its ${epGroup}-GPU EP collective exceeds the ${domain}-GPU scale-up domain, so some communication uses scale-out.`, suggestionEn: 'Keep each collective inside the scale-up domain or validate scale-out bandwidth and latency.' });
       }
     }
     if (wl.gpus === 0) add({ id: `workload-empty-${wl.workloadId}`, severity: 'warning', domain: 'workload', message: `${bp.name}: ${wl.notes[0] ?? '시뮬레이션 불가'}`, messageEn: `${bp.name}: ${wl.notesEn?.[0] ?? wl.notes[0] ?? 'simulation not possible'}` });

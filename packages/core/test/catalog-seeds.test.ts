@@ -96,7 +96,7 @@ describe('catalog seeds (S3)', () => {
       expect(cids.has(c.id), c.id).toBe(false);
       cids.add(c.id);
     }
-    for (const id of ['hgx-h100-air-4x', 'hgx-h200-air-4x', 'hgx-b300-air-4x', 'nvidia-vr-nvl72', 'nvidia-sn6600', 'nvidia-sn6800', 'amd-mi300x-air-4x', 'amd-mi325x-air-3x', 'amd-mi350x-air-3x', 'amd-mi355x-dlc-4x', 'amd-mi355x-air-2x', 'intel-gaudi3-air-4x', 'cerebras-cs3-2x', 'groq-groqrack', 'sambanova-sn40l-16', 'rebellions-atom-max-8x', 'rebellions-rebel-quad-4x', 'furiosa-rngd-10x', 'hyperaccel-orion-8x', 'hyperaccel-bertha500-8x', 'tenstorrent-galaxy-4x', 'broadcom-th5-64x800', 'broadcom-th6-128x800', 'drivenets-2500s', 'drivenets-5300r', 'drivenets-9300f', 'arista-7700r4c-38pe', 'arista-7720r4-128pe', 'cisco-n9364e-sg2', 'dell-z9864f-on', 'juniper-qfx5240-64od', 'nvidia-cx7-400', 'nvidia-cx8-800', 'nvidia-cx9-1600', 'amd-pollara-400', 'broadcom-thor2-400', 'liebert-cwa-fanwall-600', 'vertiv-coolchip-cdu-2300', 'coolit-chx2000', 'motivair-mcdu-70', 'boyd-rol4000']) {
+    for (const id of ['hgx-h100-air-4x', 'hgx-h200-air-4x', 'hgx-b300-air-4x', 'nvidia-vr-nvl72', 'nvidia-sn6600', 'nvidia-sn6800', 'amd-mi300x-air-4x', 'amd-mi325x-air-3x', 'amd-mi350x-air-3x', 'amd-mi355x-dlc-4x', 'amd-mi355x-air-2x', 'intel-gaudi3-air-4x', 'cerebras-cs3-2x', 'groq-groqrack', 'sambanova-sn40l-16', 'rebellions-atom-max-8x', 'rebellions-rebel-quad-4x', 'furiosa-rngd-10x', 'hyperaccel-orion-8x', 'hyperaccel-bertha500-8x', 'tenstorrent-galaxy-4x', 'broadcom-th5-64x800', 'broadcom-th6-128x800', 'drivenets-2500s', 'drivenets-5300r', 'drivenets-9300f', 'arista-7060x6-64pe', 'arista-7700r4c-38pe', 'arista-7720r4-128pe', 'cisco-n9364e-sg2', 'dell-z9864f-on', 'juniper-qfx5240-64od', 'nvidia-cx7-400', 'nvidia-cx8-800', 'nvidia-cx9-1600', 'amd-pollara-400', 'broadcom-thor2-400', 'liebert-cwa-fanwall-600', 'vertiv-coolchip-cdu-2300', 'coolit-chx2000', 'motivair-mcdu-70', 'boyd-rol4000']) {
       expect(findCatalogItem(id)?.origin, id).toBe('builtin');
     }
     // legacy ids keep working
@@ -120,6 +120,9 @@ describe('catalog seeds (S3)', () => {
   });
 
   it('specific announced / datasheet numbers', () => {
+    const arista = findCatalogItem('arista-7060x6-64pe')!;
+    expect(arista.source).toBe('public-spec');
+    expect(arista.switch).toMatchObject({ fabric: 'roce-generic-800', ports: 64, portGbps: 800 });
     const vr = findCatalogItem('nvidia-vr-nvl72')!;
     expect(vr.source).toBe('announced');
     expect(vr.power?.nameplateKW).toBe(227);

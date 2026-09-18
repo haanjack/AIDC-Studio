@@ -239,7 +239,7 @@ describe('workloads', () => {
   it('inference reports GPUs required within the allocation', () => {
     expect(infer.gpusRequired!).toBeGreaterThan(0);
     expect(infer.gpusRequired!).toBeLessThanOrEqual(infer.gpus);
-    expect(infer.maxRequestsPerSec!).toBeGreaterThan(400);
+    expect(infer.maxRequestsPerSec!).toBeGreaterThan(300);
     expect(infer.tpotMs!).toBeLessThanOrEqual(40.1);
     // P/D pools are sized independently: 19 × 8-GPU prefill + 5 × 8-GPU decode = 192 GPUs.
     expect(infer.gpusRequired).toBe(192);

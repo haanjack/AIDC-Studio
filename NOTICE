@@ -44,6 +44,15 @@ This product does not include vendor-supplied 3D models, CFD data, logos,
 product photos, slides, manuals or other vendor documents, and it does not
 require any vendor content pack.
 
+External benchmark data
+-----------------------
+Runtime inference benchmark data and run provenance are credited to
+SemiAnalysis InferenceX (https://inferencex.semianalysis.com/ and
+https://github.com/SemiAnalysisAI/InferenceX). The data is queried at runtime
+and is not bundled with AIDC Studio. AIDC Studio's condition matching,
+interpolation, planning bands and error analysis are independent derived work;
+SemiAnalysis does not sponsor or endorse AIDC Studio.
+
 Trademarks
 ----------
 Company and product names used in AIDC Studio (for example NVIDIA, GB300,

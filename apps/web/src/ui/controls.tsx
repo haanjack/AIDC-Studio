@@ -24,7 +24,7 @@ export function Field({ label, children, hint }: { label: ReactNode; children: R
     <div className="field" title={tip}>
       <label>{label}</label>
       <div>{children}</div>
-      {hint !== undefined && tip === undefined && hint !== null && <div className="hint" style={{ fontSize: 11, marginTop: 2 }}>{hint}</div>}
+      {hint !== undefined && tip === undefined && hint !== null && <div className="hint" style={{ marginTop: 3 }}>{hint}</div>}
     </div>
   );
 }

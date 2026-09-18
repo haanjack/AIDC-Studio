@@ -43,6 +43,12 @@ describe('meta', () => {
     expect(body.items.some((i) => i.id === 'nvidia-gb300-nvl72')).toBe(true);
     expect(body.cables.length).toBeGreaterThan(0);
   });
+
+  it('rejects an InferenceX query without an exact preset mapping before contacting upstream', async () => {
+    const res = await app.inject({ method: 'GET', url: '/api/inferencex/benchmarks?presetId=kimi-k2' });
+    expect(res.statusCode).toBe(400);
+    expect(res.json()).toMatchObject({ error: expect.stringContaining('exact InferenceX model mapping') });
+  });
 });
 
 describe('projects CRUD', () => {

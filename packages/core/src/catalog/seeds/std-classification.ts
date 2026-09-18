@@ -123,6 +123,7 @@ export const VENDOR_CLASSIFICATION: Readonly<Record<string, Classification>> = {
   'broadcom-th5-64x800': { standards: [eiaRack, sai('switch-eth-51t-64x800')] },
   'broadcom-th6-128x800': { standards: [eiaRack, sai('switch-eth-102t-128x800')] },
   'dell-z9864f-on': { standards: [eiaRack, sai('switch-eth-51t-64x800')] },
+  'arista-7060x6-64pe': { standards: [eiaRack, sai('switch-eth-51t-64x800')] },
   'arista-7700r4c-38pe': { standards: [eiaRack, sai()] },
   'arista-7720r4-128pe': { standards: [eiaRack, sai()] },
   'cisco-n9364e-sg2': { standards: [eiaRack, sai()] },

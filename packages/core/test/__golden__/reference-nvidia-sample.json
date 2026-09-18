@@ -1,9 +1,9 @@
 {
-  "note": "Canonical NVIDIA vendor sample after removal of the anonymous centre-gap setting and explicit FP8 inference weight precision (2026-09-16). projectSha is sha256 of JSON.stringify(project without createdAt/updatedAt) with name = legacyName.",
+  "note": "Canonical NVIDIA vendor sample with shared TP/EP serving workers and a memory-valid DeepSeek-style TP8/EP8 inference topology (2026-09-17). projectSha is sha256 of JSON.stringify(project without createdAt/updatedAt) with name = legacyName.",
   "name": "NVIDIA reference",
   "legacyName": "Reference AI Factory — GB300 NVL72",
   "id": "ref-gb300-hall",
-  "projectSha": "c395f689462352ee1c1482a29cde9f806554d26aa8c5901543a9497cd25fd167",
+  "projectSha": "2d836084a1e41c5202b7ca66afd032e12100019ddf16804d288f616ad8f4f3f0",
   "pods": 6,
   "equipment": 157,
   "gpus": 6912,

@@ -97,7 +97,7 @@ export function App() {
   const t = useT();
   const readOnly = useReadOnly();
   const {
-    project, hallId, page, panelWide, overlays, colorMode, selection, analysis, thermal, toast,
+    project, hallId, page, panelWide, overlays, colorMode, selection, analysis, thermal, toast, theme,
   } = s;
   const [panelWidths, setPanelWidths] = useState<Partial<Record<PageId, number>>>({});
   const panelWidth = panelWidths[page] ?? readPanelWidth(page) ?? defaultPanelWidth(page);
@@ -170,6 +170,11 @@ export function App() {
     if (w !== null && w !== useApp.getState().panelWide) useApp.getState().setPanelWide(w);
   }, [page]);
 
+  // Keep browser-native controls and the CSS variable palette in sync before the page paints.
+  useLayoutEffect(() => {
+    document.documentElement.dataset.theme = theme;
+  }, [theme]);
+
   const rack = useMemo(() => {
     if (colorMode === 'power') return rackPowerValues(project, hallId);
     if (colorMode === 'inlet-temp') return inletValues(thermal.metrics);
@@ -193,6 +198,16 @@ export function App() {
           <div style={{ width: 62 }}><Select value={project.locale ?? 'en'} options={LOCALES} onChange={(v) => s.setLocale(v)} /></div>
         </label>
         <UiLocaleSelect />
+        <button
+          className="btn ghost sm theme-toggle"
+          title={t(theme === 'dark' ? 'shell.topbar.switchToLight' : 'shell.topbar.switchToDark')}
+          aria-label={t(theme === 'dark' ? 'shell.topbar.switchToLight' : 'shell.topbar.switchToDark')}
+          aria-pressed={theme === 'light'}
+          onClick={() => s.setTheme(theme === 'dark' ? 'light' : 'dark')}
+        >
+          <Icon name={theme === 'dark' ? 'moon' : 'sun'} size={15} />
+          <span className="theme-toggle-label">{t(theme === 'dark' ? 'shell.topbar.themeDark' : 'shell.topbar.themeLight')}</span>
+        </button>
         <button className="btn ghost sm" title={t('shell.topbar.reset')} disabled={readOnly} onClick={() => { if (window.confirm(t('shell.topbar.resetConfirm', { name: project.name }))) void s.resetProjectToTemplate('reference'); }}><Icon name="refresh" size={15} /></button>
         <button className="btn ghost sm" title={t('shell.topbar.undo')} disabled={readOnly || !s.past.length} onClick={s.undo}><Icon name="undo" size={15} /></button>
         <button className="btn ghost sm" title={t('shell.topbar.redo')} disabled={readOnly || !s.future.length} onClick={s.redo}><Icon name="redo" size={15} /></button>

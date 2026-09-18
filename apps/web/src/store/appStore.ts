@@ -19,6 +19,8 @@ import { apiErrorInfo, pickFallbackProject } from '../app/projectMenu.ts';
 import { createView2dSlice, type View2DSlice } from '../view2d/store.ts';
 
 export type PageId = 'overview' | 'workload' | 'architecture' | 'site' | 'layout' | 'power' | 'network' | 'cooling' | 'cost' | 'schedule' | 'drawings' | 'docs' | 'catalog';
+/** Application chrome theme. Drawing sheets and the 2D renderer keep their own paper/dark controls. */
+export type AppTheme = 'dark' | 'light';
 /** Single CameraPreset declaration lives in viewer/types.ts (S4); re-exported here for existing importers. */
 export type { CameraPreset, CameraMode } from '../viewer/index.ts';
 
@@ -154,6 +156,9 @@ export interface AppState {
   panelCollapsed: boolean;
   setPanelCollapsed(v: boolean): void;
   togglePanelCollapsed(): void;
+  /** Application chrome theme; persisted per browser and independent of project data. */
+  theme: AppTheme;
+  setTheme(theme: AppTheme): void;
   /** Catalog asks Platform & design units to preselect this GPU rack asset. */
   pendingArchitectureRackId: string | null;
   setPendingArchitectureRackId(id: string | null): void;
@@ -217,6 +222,7 @@ function setLibraryCache(lib: CatalogLibrary) {
 
 const LOCAL_KEY = 'aidc:project';
 const PANEL_COLLAPSED_KEY = 'aidc:panelCollapsed';
+const THEME_KEY = 'aidc:theme';
 const UI_LOCALE_KEY = 'aidc:uiLocale';
 const LAST_ID_KEY = 'aidc:lastProjectId';
 const HISTORY_LIMIT = 60;
@@ -611,6 +617,11 @@ export const useApp = create<AppState>((set, get) => ({
   },
   togglePanelCollapsed() {
     get().setPanelCollapsed(!get().panelCollapsed);
+  },
+  theme: safeLocal(() => localStorage.getItem(THEME_KEY) === 'light' ? 'light' : 'dark', 'dark' as AppTheme),
+  setTheme(theme) {
+    safeLocal(() => localStorage.setItem(THEME_KEY, theme), undefined);
+    set({ theme });
   },
   pendingArchitectureRackId: null,
   setPendingArchitectureRackId(id) {

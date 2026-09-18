@@ -24,6 +24,7 @@ import { findNodeSpec } from '../catalog/seeds/index.ts';
 import { peakFlopsFor } from '../engines/traffic.ts';
 import type { BenchmarkRow, CatalogItem, EvidenceSourceType, WorkloadBlueprint } from '../model/types.ts';
 import { findModelPreset } from './presets.ts';
+import { inferenceCalibrationSignature } from './inference.ts';
 
 export type CalibrationPrecision = 'bf16' | 'fp8' | 'fp4';
 
@@ -78,7 +79,7 @@ export interface CalibrationResult {
 /** 'NVFP4 (…)' / 'MXFP8' / 'BF16' → engine precision key. */
 export function parsePrecision(s: string | undefined): CalibrationPrecision | undefined {
   if (!s) return undefined;
-  if (/fp4/i.test(s)) return 'fp4';
+  if (/fp4|int4/i.test(s)) return 'fp4';
   if (/fp8/i.test(s)) return 'fp8';
   if (/bf16|fp16|bfloat/i.test(s)) return 'bf16';
   return undefined;
@@ -295,7 +296,7 @@ export function calibrateFromBenchmark(
     interactivity = b.interactivityTokPerSecPerUser ?? b.latencyConstraint?.minInteractivityTokPerSecPerUser;
     if (b.derived?.outputTokensPerSecPerGpu) warn('lower-bound', 'info', 'Output tokens/s per GPU is used for decode sizing (InferenceX total tokens/s also counts input tokens).', 'decode 산정에는 GPU당 출력 tokens/s를 사용합니다 (InferenceX 총 tokens/s는 입력 토큰도 셉니다).');
     if (b.suite.includes('InferenceX')) {
-      const age = (Date.parse('2026-09-15') - Date.parse(b.round)) / 86400000;
+      const age = (Date.now() - Date.parse(b.round)) / 86400000;
       if (Number.isFinite(age) && age > 90) warn('stale', 'warn', `InferenceX row dated ${b.round} is older than 90 days (continuous benchmark — re-query).`, `InferenceX 행(${b.round})이 90일보다 오래되었습니다 (연속 벤치마크 — 다시 조회하세요).`);
     }
     const preset = findModelPreset(b.model);
@@ -344,7 +345,7 @@ export function scaleWarning(sourceGpus: number | undefined, targetGpus: number)
 }
 
 /** Blueprint calibration record (stored on WorkloadBlueprint.calibration) from a result. */
-export function calibrationRecord(r: CalibrationResult, b: BenchmarkRow | UserMeasurement, extraWarnings: CalibrationWarning[] = [], locale: 'en' | 'ko' = 'en'): NonNullable<WorkloadBlueprint['calibration']> {
+export function calibrationRecord(r: CalibrationResult, b: BenchmarkRow | UserMeasurement, extraWarnings: CalibrationWarning[] = [], locale: 'en' | 'ko' = 'en', workload?: WorkloadBlueprint): NonNullable<WorkloadBlueprint['calibration']> {
   const isRow = 'id' in b;
   const warns = [...r.warnings, ...extraWarnings].filter((x) => x.severity !== 'info').map((x) => (locale === 'ko' ? x.ko : x.en));
   return {
@@ -362,6 +363,7 @@ export function calibrationRecord(r: CalibrationResult, b: BenchmarkRow | UserMe
     acceleratorCatalogId: r.sourceAcceleratorCatalogId,
     sourceType: r.sourceType,
     conditions: r.conditions,
+    workloadSignature: workload ? inferenceCalibrationSignature(workload) : undefined,
     transfer: locale === 'ko' ? r.transferKo : r.transferEn,
     warnings: warns.length ? warns : undefined,
   };

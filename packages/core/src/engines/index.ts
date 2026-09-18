@@ -41,6 +41,7 @@ export { PLACEMENT_LABEL, evaluatePlacementCandidate, type PlacementOptions } fr
 export { clearanceZones, findClearanceIntrusions, floorLoadKgPerM2 } from './space.ts';
 export { airDeltaT, dryBulbFraction, wetBulbFraction } from './cooling.ts';
 export { simulateInference, simulateTraining, simulateWorkload, type WorkloadEnv } from './workload.ts';
+export { analyzeInferenceWorkloadPareto, type InferenceWorkloadParetoPoint, type InferenceWorkloadParetoReport, type InferenceWorkloadParetoSeries } from './inferencePareto.ts';
 // v2 contract exports
 export * from './radix.ts';
 export { analyzeInferenceTraffic, analyzeTraffic, type TrafficInput } from './traffic.ts';

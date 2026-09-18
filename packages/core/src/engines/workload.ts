@@ -3,7 +3,8 @@ import { clamp, type Ctx, hash32, mulberry32 } from './context.ts';
 import type { NetworkResult } from './network.ts';
 import { kvSeqEffective, moeLayerCount, peakFlopsFor } from './traffic.ts';
 import { effectiveShare, effectiveShares, shareState } from '../workload/shares.ts';
-import { inferenceMemoryEstimate, inferenceParallelismFor, inferenceReplicaGpus } from '../workload/inference.ts';
+import { inferenceCalibrationSignature, inferenceMemoryEstimate, inferenceParallelismFor, inferencePromptTokens, inferenceReplicaGpus } from '../workload/inference.ts';
+import { findBenchmark } from '../workload/presets.ts';
 
 /**
  * Workload blueprint simulation (analytical).
@@ -61,9 +62,13 @@ export function workloadEnv(ctx: Ctx, net: NetworkResult, power: Pick<PowerAnaly
     gpuRack: ctx.gpuRack,
     clusterGpus: jobClusterGpus(ctx, net),
     projectGpus: ctx.gpus,
-    // v2: the workload-driven traffic engine (engines/traffic.ts) supplies the effective efficiency when a report exists;
-    // the legacy fabric scalar is the fallback (projects without a training blueprint / GPU racks)
-    commEfficiency: traffic?.commEfficiencyEffective ?? net.analysis.commEfficiency,
+    // Inference sizing must not feed offered-demand congestion back into per-replica throughput: doing so creates a
+    // runaway loop (overload → lower η → more required replicas → apparent overload). Use the uncongested fabric/host
+    // efficiency here and leave the traffic engine responsible for reporting/capping the physical network envelope.
+    // Training keeps the end-to-end effective value because its step model explicitly represents collective congestion.
+    commEfficiency: traffic?.mode === 'inference'
+      ? clamp((traffic.eta?.value ?? net.analysis.commEfficiency) * (traffic.etaHost ?? 1), 0.05, 1)
+      : traffic?.commEfficiencyEffective ?? net.analysis.commEfficiency,
     traffic,
     networkKW: net.switchKW + net.analysis.transceiverKW,
     pue: power.pue || 1.2,
@@ -248,6 +253,7 @@ export function simulateInference(w: WorkloadBlueprint, env: WorkloadEnv): Workl
   const inf = w.inference;
   if (!rack || !c || c.gpus <= 0) return empty(w, 'GPU 랙이 배치되지 않아 추론 시뮬레이션을 수행할 수 없습니다.', 'No GPU rack is placed — the inference simulation cannot run.');
   if (!inf) return empty(w, '추론 파라미터(inference)가 정의되지 않았습니다.', 'Inference parameters are not defined.');
+  const prompt = inferencePromptTokens(inf);
   const notes: string[] = [];
   const notesEn: string[] = [];
   const note = (ko: string, en: string) => {
@@ -295,9 +301,19 @@ export function simulateInference(w: WorkloadBlueprint, env: WorkloadEnv): Workl
       ? `P/D topology: prefill ${topo(prefill)} = ${prefillGpus} GPUs, decode ${topo(decode)} = ${decodeGpus} GPUs.`
       : `Aggregated topology: ${topo(aggregated)} = ${decodeGpus} GPUs per instance.`,
   );
+  if (prompt.cached > 0) note(
+    prompt.mode === 'trace'
+      ? `AgentX trace cache 보정: 입력 ${Math.round(prompt.input).toLocaleString('en-US')} 토큰 중 GPU KV ${Math.round(prompt.gpuCached).toLocaleString('en-US')} + 원격 KV ${Math.round(prompt.remoteCached).toLocaleString('en-US')}를 재사용하고 ${Math.round(prompt.uncached).toLocaleString('en-US')} 토큰만 새로 prefill합니다. CPU/external hit는 중복 합산하지 않고 큰 값을 사용했습니다. KV HBM 산정은 전체 컨텍스트를 유지합니다.`
+      : `Prefix cache: 입력 ${Math.round(prompt.input).toLocaleString('en-US')} 토큰 중 ${Math.round(prompt.cached).toLocaleString('en-US')}(${(prompt.hitRatio * 100).toFixed(1)}%)은 warm KV로 재사용하고 ${Math.round(prompt.uncached).toLocaleString('en-US')} 토큰만 새로 prefill합니다. KV HBM은 전체 컨텍스트를 유지합니다.`,
+    prompt.mode === 'trace'
+      ? `AgentX trace cache calibration: ${Math.round(prompt.gpuCached).toLocaleString('en-US')} GPU-KV plus ${Math.round(prompt.remoteCached).toLocaleString('en-US')} remote-KV tokens are reused from ${Math.round(prompt.input).toLocaleString('en-US')} input tokens; only ${Math.round(prompt.uncached).toLocaleString('en-US')} tokens run new prefill. CPU/external hits are not added because they can overlap; the larger rate is used. Full-context KV remains in memory sizing.`
+      : `Prefix cache: ${Math.round(prompt.cached).toLocaleString('en-US')} of ${Math.round(prompt.input).toLocaleString('en-US')} input tokens (${(prompt.hitRatio * 100).toFixed(1)}%) reuse warm KV; only ${Math.round(prompt.uncached).toLocaleString('en-US')} tokens run new prefill. KV HBM still retains the full context.`,
+  );
   // HBM bandwidth per GPU from the catalog (memBandwidthGBps); FLOPS-scaled proxy only for legacy items without it
   const perGpuMbw = c.memBandwidthGBps ?? (1300 * c.gpuFlopsPeak) / 2.3e15;
-  const effectiveStageGpus = (p: InferenceParallelism) => p.tp * p.pp * p.cp * (w.model.moe ? p.ep : 1);
+  const effectiveStageGpus = (p: InferenceParallelism) => inferenceReplicaGpus(
+    w.model.moe ? p : { ...p, ep: 1 },
+  );
   const prefillEffectiveGpus = effectiveStageGpus(prefill);
   const decodeEffectiveGpus = effectiveStageGpus(decode);
   const decodeMbw = decodeEffectiveGpus * perGpuMbw * 0.85; // GB/s
@@ -325,7 +341,7 @@ export function simulateInference(w: WorkloadBlueprint, env: WorkloadEnv): Workl
     const ppBytes = p.pp > 1 ? (p.pp - 1) * h * 2 : 0;
     const epBytes = w.model.moe && p.ep > 1 ? moeLayerCount(L, w.model.moe) * Math.max(1, w.model.moe.topK) * h * 3 * ((p.ep - 1) / p.ep) : 0;
     const bytes = tpBytes + cpBytes + ppBytes + epBytes;
-    const inDomain = p.tp * p.cp * (w.model.moe ? p.ep : 1) <= c.scaleUp.domainSize;
+    const inDomain = inferenceReplicaGpus(w.model.moe ? p : { ...p, ep: 1 }) <= c.scaleUp.domainSize;
     const bw = inDomain ? scaleUpBps : scaleOutBps;
     return bw > 0 ? bytes / bw : bytes > 0 ? Number.POSITIVE_INFINITY : 0;
   };
@@ -355,42 +371,57 @@ export function simulateInference(w: WorkloadBlueprint, env: WorkloadEnv): Workl
   }
   const bStar = lo;
   const decodeRate = bStar / tpot(bStar);
-  const prefillComputeRate = (prefillFlopsEff * 0.55) / (2 * nActive + 2 * w.model.layers * inf.inputTokens * w.model.hiddenSize);
+  const prefillComputeRate = (prefillFlopsEff * 0.55) / (2 * nActive + 2 * w.model.layers * Math.max(1, prompt.uncached) * w.model.hiddenSize);
   const prefillRate = 1 / (1 / prefillComputeRate + prefillCommSPerToken);
-  const service = inf.inputTokens / prefillRate;
-  const prefillDemand = inf.requestsPerSec * inf.inputTokens;
+  const service = prompt.uncached / prefillRate;
+  const prefillDemand = inf.requestsPerSec * prompt.uncached;
   const decodeDemand = inf.requestsPerSec * inf.outputTokens;
   let prefillInstances = 0;
   let decodeInstances = 0;
   let aggregatedInstances = 0;
   let ttft: number;
   let tpotAct: number;
+  const cacheTransferGbps = soGbps * Math.max(1, Math.min(prefillGpus, decodeGpus));
+  const kvTransfer = cacheTransferGbps > 0 ? (kvPerTokenGB * prompt.transfer * 8) / cacheTransferGbps : 0;
   if (inf.disaggregated) {
     prefillInstances = Math.max(1, Math.ceil(prefillDemand / (prefillRate * 0.7)));
     decodeInstances = Math.max(1, Math.ceil(decodeDemand / decodeRate));
     const rho = prefillDemand / (prefillInstances * prefillRate);
-    const pdGbps = soGbps * Math.max(1, Math.min(prefillGpus, decodeGpus));
-    const kvTransfer = pdGbps > 0 ? (kvPerTokenGB * inf.inputTokens * 8) / pdGbps : 0;
     ttft = service / Math.max(0.05, 1 - rho) + kvTransfer;
     const bAct = Math.min(bStar, Math.max(1, (decodeDemand / decodeInstances) * tpot(bStar)));
     tpotAct = tpot(bAct);
-    note(`분리형(disaggregated) 서빙: prefill ${prefillInstances} × ${prefillGpus} GPU, decode ${decodeInstances} × ${decodeGpus} GPU 인스턴스.`, `Disaggregated serving: ${prefillInstances} prefill × ${prefillGpus} GPU and ${decodeInstances} decode × ${decodeGpus} GPU instances.`);
+    note(`목표 수요 역산(배치 풀 제한 전): prefill DP${prefillInstances} × ${prefillGpus} GPU, decode DP${decodeInstances} × ${decodeGpus} GPU.`, `Target-demand sizing before the placed-pool limit: prefill DP${prefillInstances} × ${prefillGpus} GPUs and decode DP${decodeInstances} × ${decodeGpus} GPUs.`);
   } else {
     let n = Math.max(1, Math.ceil(decodeDemand / decodeRate));
     let p = 0;
     for (let guard = 0; guard < 200000; guard++, n++) {
-      p = (inf.requestsPerSec / n) * inf.inputTokens / prefillRate;
+      p = (inf.requestsPerSec / n) * prompt.uncached / prefillRate;
       if (p >= 0.6) continue;
       if (decodeDemand / n <= decodeRate * (1 - p) * 0.85) break;
     }
     aggregatedInstances = n;
-    ttft = (service / Math.max(0.05, 1 - p)) * 1.3;
+    ttft = (service / Math.max(0.05, 1 - p)) * 1.3 + kvTransfer;
     tpotAct = tpot(bStar) / Math.max(0.05, 1 - p);
     note(`통합형 서빙: ${n} × ${decodeGpus} GPU 인스턴스 (prefill 점유율 ${(p * 100).toFixed(0)}%).`, `Aggregated serving: ${n} × ${decodeGpus} GPU instances (prefill share ${(p * 100).toFixed(0)} %).`);
   }
   // v2 2차 (T6, F9): a benchmark calibration (output tokens/s per GPU at the stated interactivity, workload/calibration.ts)
   // replaces the decode-capacity model for sizing: GPUs = requests/s × output tokens ÷ tok/s per GPU, whole instances
-  const calTok = w.calibration?.mode === 'inference' && w.calibration.tokensPerSecPerGpu && w.calibration.tokensPerSecPerGpu > 0 ? w.calibration.tokensPerSecPerGpu : undefined;
+  const storedCalibration = w.calibration;
+  const storedBenchmark = storedCalibration?.benchmarkId ? findBenchmark(storedCalibration.benchmarkId) : undefined;
+  const signatureMatches = !storedCalibration?.workloadSignature || storedCalibration.workloadSignature === inferenceCalibrationSignature(w);
+  const staticModelMatches = !storedBenchmark || !w.presetId || storedBenchmark.model === w.presetId;
+  // Live InferenceX rows saved before workload signatures existed cannot be proven to match after a preset or
+  // topology change. Static bundled rows still have a model identity, while an unbound user measurement remains
+  // the user's explicit local evidence.
+  const legacyUnboundInferenceX = !!storedCalibration?.benchmarkId?.startsWith('ix-') && !storedCalibration.workloadSignature;
+  const calibrationMatches = signatureMatches && staticModelMatches && !legacyUnboundInferenceX;
+  const calTok = calibrationMatches && storedCalibration?.mode === 'inference' && storedCalibration.tokensPerSecPerGpu && storedCalibration.tokensPerSecPerGpu > 0
+    ? storedCalibration.tokensPerSecPerGpu
+    : undefined;
+  if (storedCalibration?.mode === 'inference' && !calibrationMatches) note(
+    '현재 모델·요청 길이·정밀도·서빙 토폴로지와 맞지 않는 이전 추론 보정은 계산에서 제외했습니다. 현재 조건으로 InferenceX 또는 사용자 측정을 다시 적용하세요.',
+    'A previous inference calibration does not match the current model, request shape, precision, or serving topology and was excluded. Re-apply an InferenceX or user measurement for the current conditions.',
+  );
   if (calTok) {
     const modelInstances = inf.disaggregated ? decodeInstances : aggregatedInstances;
     const calibratedInstances = Math.max(1, Math.ceil(decodeDemand / (calTok * decodeGpus)));
@@ -398,17 +429,90 @@ export function simulateInference(w: WorkloadBlueprint, env: WorkloadEnv): Workl
     else aggregatedInstances = calibratedInstances;
     note(`벤치마크 보정: GPU당 출력 ${Math.round(calTok).toLocaleString('en-US')} tok/s → decode ${calibratedInstances} × ${decodeGpus} GPU (보정 전 모델 ${modelInstances}개; ${w.calibration!.source}).`, `Benchmark calibration: ${Math.round(calTok).toLocaleString('en-US')} output tok/s per GPU → ${calibratedInstances} decode × ${decodeGpus} GPUs (uncalibrated model ${modelInstances}; ${w.calibration!.source}).`);
   }
+  const prefillRequiredInstances = prefillInstances;
+  const decodeRequiredInstances = inf.disaggregated ? decodeInstances : aggregatedInstances;
   const gpusRequired = inf.disaggregated
-    ? prefillInstances * prefillGpus + decodeInstances * decodeGpus
+    ? prefillRequiredInstances * prefillGpus + decodeRequiredInstances * decodeGpus
     : aggregatedInstances * decodeGpus;
-  const maxRequestsPerSec = (inf.requestsPerSec * gpus) / Math.max(1, gpusRequired);
+  let deployedPrefillInstances = 0;
+  let deployedDecodeInstances = 0;
+  let poolCapacityRps = 0;
+  if (inf.disaggregated) {
+    const prefillCapacityRps = prompt.uncached > 0 ? (prefillRate * 0.7) / prompt.uncached : Number.POSITIVE_INFINITY;
+    const decodeCapacityRps = inf.outputTokens > 0 ? ((calTok ? calTok * decodeGpus : decodeRate) / inf.outputTokens) : Number.POSITIVE_INFINITY;
+    const requestedPrefillDp = prefill.dp;
+    const requestedDecodeDp = decode.dp;
+    const requestedPoolGpus = (requestedPrefillDp ?? 0) * prefillGpus + (requestedDecodeDp ?? 0) * decodeGpus;
+    if (requestedPrefillDp && requestedDecodeDp && requestedPoolGpus <= gpus) {
+      deployedPrefillInstances = requestedPrefillDp;
+      deployedDecodeInstances = requestedDecodeDp;
+    } else {
+      // Allocate whole replicas on the placed GPU pool. An explicit DP is fixed when it fits; otherwise it is a cap and
+      // the best balanced feasible P/D pair is selected, making an over-sized request visible without fractional replicas.
+      const maxPrefill = Math.max(1, Math.min(requestedPrefillDp ?? prefillRequiredInstances, Math.floor((gpus - decodeGpus) / prefillGpus)));
+      const maxDecode = Math.max(1, Math.min(requestedDecodeDp ?? decodeRequiredInstances, Math.floor((gpus - prefillGpus) / decodeGpus)));
+      let bestCapacity = -1;
+      let bestGpus = Number.POSITIVE_INFINITY;
+      for (let p = requestedPrefillDp && requestedPoolGpus <= gpus ? requestedPrefillDp : 1; p <= maxPrefill; p++) {
+        const remaining = gpus - p * prefillGpus;
+        if (remaining < decodeGpus) continue;
+        const d = requestedDecodeDp && p * prefillGpus + requestedDecodeDp * decodeGpus <= gpus
+          ? requestedDecodeDp
+          : Math.max(1, Math.min(maxDecode, Math.floor(remaining / decodeGpus)));
+        const capacity = Math.min(p * prefillCapacityRps, d * decodeCapacityRps);
+        const used = p * prefillGpus + d * decodeGpus;
+        if (capacity > bestCapacity + 1e-9 || (Math.abs(capacity - bestCapacity) <= 1e-9 && used < bestGpus)) {
+          bestCapacity = capacity;
+          bestGpus = used;
+          deployedPrefillInstances = p;
+          deployedDecodeInstances = d;
+        }
+      }
+    }
+    poolCapacityRps = Math.min(deployedPrefillInstances * prefillCapacityRps, deployedDecodeInstances * decodeCapacityRps);
+    const achievedForLatency = Math.min(inf.requestsPerSec, poolCapacityRps);
+    const achievedPrefillDemand = achievedForLatency * prompt.uncached;
+    const rho = achievedPrefillDemand / Math.max(1e-9, deployedPrefillInstances * prefillRate);
+    ttft = service / Math.max(0.05, 1 - rho) + kvTransfer;
+    const achievedDecodeDemand = achievedForLatency * inf.outputTokens;
+    const bAct = Math.min(bStar, Math.max(1, (achievedDecodeDemand / Math.max(1, deployedDecodeInstances)) * tpot(bStar)));
+    tpotAct = tpot(bAct);
+    note(
+      `배치 풀: prefill DP${deployedPrefillInstances} × ${prefillGpus} GPU, decode DP${deployedDecodeInstances} × ${decodeGpus} GPU${prefill.dp || decode.dp ? ' (사용자 DP 반영)' : ' (배치 GPU에서 자동 할당)'}.`,
+      `Placed pools: prefill DP${deployedPrefillInstances} × ${prefillGpus} GPUs and decode DP${deployedDecodeInstances} × ${decodeGpus} GPUs${prefill.dp || decode.dp ? ' (user DP applied)' : ' (auto-allocated on placed GPUs)'}.`,
+    );
+    if (requestedPoolGpus > gpus) note(
+      `지정한 P/D DP 풀은 ${requestedPoolGpus} GPU가 필요해 할당 ${gpus} GPU에 들어가지 않습니다. 위 결과는 그 DP를 상한으로 사용한 최적의 정수 복제본 배치입니다.`,
+      `The requested P/D DP pools need ${requestedPoolGpus} GPUs and do not fit in the ${gpus} allocated GPUs. The result uses the best whole-replica placement with those DP values as caps.`,
+    );
+  } else {
+    const requestedDp = aggregated.dp;
+    deployedDecodeInstances = Math.max(1, Math.min(requestedDp ?? aggregatedInstances, Math.floor(gpus / decodeGpus)));
+    poolCapacityRps = calTok
+      ? (deployedDecodeInstances * decodeGpus * calTok) / Math.max(1, inf.outputTokens)
+      : (inf.requestsPerSec * deployedDecodeInstances) / Math.max(1, aggregatedInstances);
+    const achievedForLatency = Math.min(inf.requestsPerSec, poolCapacityRps);
+    const p = (achievedForLatency / Math.max(1, deployedDecodeInstances)) * prompt.uncached / prefillRate;
+    ttft = (service / Math.max(0.05, 1 - p)) * 1.3 + kvTransfer;
+    tpotAct = tpot(bStar) / Math.max(0.05, 1 - p);
+    if (requestedDp) note(`배치 풀: 통합형 DP${deployedDecodeInstances} × ${decodeGpus} GPU (사용자 DP 반영).`, `Placed pool: aggregated DP${deployedDecodeInstances} × ${decodeGpus} GPUs (user DP applied).`);
+  }
+  const worstNetworkUtilization = env.traffic?.mode === 'inference' ? Math.max(0, ...env.traffic.perTier.map((tier) => tier.utilization)) : 0;
+  // Utilisation is measured at the configured offered rate, so RPS/utilisation is the fabric's linearised capacity.
+  // Do not clamp sub-100% utilisation to 1: that would rename current demand as the maximum achievable rate.
+  const networkCapacityRps = worstNetworkUtilization > 0 ? inf.requestsPerSec / worstNetworkUtilization : poolCapacityRps;
+  const maxRequestsPerSec = Math.min(poolCapacityRps, networkCapacityRps);
+  if (worstNetworkUtilization > 1.001) note(
+    `현재 패브릭의 제시 수요 병목(최대 ${worstNetworkUtilization.toFixed(1)}×)을 반영해 달성 요청률을 ${maxRequestsPerSec.toFixed(2)} req/s 이하로 제한했습니다. GPU 증설만으로는 이 한계가 해소되지 않습니다.`,
+    `The offered-demand fabric bottleneck (up to ${worstNetworkUtilization.toFixed(1)}×) caps achievable rate at ${maxRequestsPerSec.toFixed(2)} req/s. Adding GPUs alone does not remove this limit.`,
+  );
   if (gpusRequired > gpus) note(`목표 ${inf.requestsPerSec} req/s에는 GPU ${gpusRequired}개가 필요하지만 ${gpus}개만 할당되었습니다.`, `The target ${inf.requestsPerSec} req/s needs ${gpusRequired} GPUs but only ${gpus} are allocated.`);
   if (ttft * 1000 > inf.ttftSloMs) note(`예상 TTFT ${(ttft * 1000).toFixed(0)} ms가 SLO ${inf.ttftSloMs} ms를 초과합니다.`, `Predicted TTFT ${(ttft * 1000).toFixed(0)} ms exceeds the SLO ${inf.ttftSloMs} ms.`);
 
   // power
   const np = rack.power!;
   const racks = gpus / c.gpus;
-  const u = clamp(gpusRequired / Math.max(1, gpus), 0, 1);
+  const u = clamp(inf.requestsPerSec / Math.max(1e-9, poolCapacityRps), 0, 1);
   const netShare = env.networkKW * (gpus / Math.max(1, env.projectGpus ?? env.clusterGpus));
   const rng = mulberry32(hash32(w.id));
   const target: number[] = [];
@@ -423,11 +527,27 @@ export function simulateInference(w: WorkloadBlueprint, env: WorkloadEnv): Workl
   const peakPowerKW = Math.max(...trace.map((p) => p.powerKW));
   const energyMWh = (avgPowerKW * env.pue * 24 * w.durationDays) / 1000;
   const servedRps = Math.min(inf.requestsPerSec, maxRequestsPerSec);
+  const requestedOutputTokensPerSec = inf.requestsPerSec * inf.outputTokens;
+  const outputTokensPerSec = servedRps * inf.outputTokens;
+  const totalTokensPerSec = servedRps * (inf.inputTokens + inf.outputTokens);
+  const computedTokensPerSec = servedRps * (prompt.uncached + inf.outputTokens);
+  const outputCapacityTokensPerSec = maxRequestsPerSec * inf.outputTokens;
+  const modeledOutputTokensPerSecPerGpu = decodeRate / Math.max(1, decodeGpus);
+  const designDecodeGpus = decodeRequiredInstances * decodeGpus;
+  const placedDecodeGpus = deployedDecodeInstances * decodeGpus;
+  const designOutputTokensPerSecPerGpu = requestedOutputTokensPerSec / Math.max(1, designDecodeGpus);
+  const allocatedOutputTokensPerSecPerGpu = outputTokensPerSec / Math.max(1, placedDecodeGpus);
 
   return {
     workloadId: w.id,
     gpus,
     maxRequestsPerSec,
+    servedRequestsPerSec: servedRps,
+    requestedOutputTokensPerSec,
+    outputTokensPerSec,
+    totalTokensPerSec,
+    computedTokensPerSec,
+    outputCapacityTokensPerSec,
     ttftMs: ttft * 1000,
     tpotMs: tpotAct * 1000,
     gpusRequired,
@@ -443,13 +563,34 @@ export function simulateInference(w: WorkloadBlueprint, env: WorkloadEnv): Workl
       instanceGpus: decodeGpus,
       prefillInstanceGpus: prefillGpus,
       decodeInstanceGpus: decodeGpus,
-      prefillReplicas: prefillInstances,
-      decodeReplicas: inf.disaggregated ? decodeInstances : aggregatedInstances,
+      prefillReplicas: inf.disaggregated ? deployedPrefillInstances : 0,
+      decodeReplicas: deployedDecodeInstances,
+      prefillRequiredReplicas: inf.disaggregated ? prefillRequiredInstances : 0,
+      decodeRequiredReplicas: decodeRequiredInstances,
+      configuredPrefillDp: prefill.dp ?? 0,
+      configuredDecodeDp: (inf.disaggregated ? decode.dp : aggregated.dp) ?? 0,
+      placedPoolGpus: inf.disaggregated ? deployedPrefillInstances * prefillGpus + deployedDecodeInstances * decodeGpus : deployedDecodeInstances * decodeGpus,
+      computeCapacityRequestsPerSec: poolCapacityRps,
+      networkCapacityRequestsPerSec: networkCapacityRps,
+      calibrationApplied: calTok ? 1 : 0,
+      topologyOutsideScaleUp: Math.max(prefillGpus, decodeGpus) > c.scaleUp.domainSize ? 1 : 0,
       prefillTp: prefill.tp, prefillPp: prefill.pp, prefillEp: prefill.ep, prefillCp: prefill.cp,
+      prefillExpertMapping: prefill.expertMapping ?? 'shared',
       decodeTp: decode.tp, decodePp: decode.pp, decodeEp: decode.ep, decodeCp: decode.cp,
+      decodeExpertMapping: decode.expertMapping ?? 'shared',
       maxBatch: bStar,
       decodeTokPerSecPerInstance: decodeRate,
+      modeledOutputTokensPerSecPerGpu,
+      designOutputTokensPerSecPerGpu,
+      allocatedOutputTokensPerSecPerGpu,
+      ...(calTok ? { calibratedOutputTokensPerSecPerGpu: calTok } : {}),
       prefillTokPerSecPerInstance: prefillRate,
+      cachedPrefixTokens: prompt.cached,
+      gpuCachedPrefixTokens: prompt.gpuCached,
+      remoteCachedPrefixTokens: prompt.remoteCached,
+      uncachedInputTokens: prompt.uncached,
+      cacheTransferTokens: prompt.transfer,
+      cacheMode: prompt.mode,
       prefillCommUsPerToken: prefillCommSPerToken * 1e6,
       decodeCommUsPerToken: decodeCommSPerToken * 1e6,
       memBandwidthGBps: decodeMbw,

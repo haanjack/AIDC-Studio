@@ -146,7 +146,7 @@ describe('traffic.ts — MoE / EP, oversubscription and η', () => {
     expect(mla.inference?.attention).toBe('mla');
     expect(mla.inference?.kvBytesPerToken).toBe(61 * (512 + 64) * 2);
     expect(mla.inference?.epDecodeTokPerSPerUser).toBeGreaterThan(0);
-    expect(mla.inference).toMatchObject({ disaggregated: true, prefillInstanceGpus: 16, decodeInstanceGpus: 32, prefillParallelism: { tp: 2, ep: 4, cp: 2 }, decodeParallelism: { tp: 4, ep: 8, cp: 1 } });
+    expect(mla.inference).toMatchObject({ disaggregated: true, prefillInstanceGpus: 8, decodeInstanceGpus: 8, prefillParallelism: { tp: 2, ep: 4, cp: 2 }, decodeParallelism: { tp: 4, ep: 8, cp: 1 } });
     const gqa = computeTraffic({ ...llama3, inference: { params: { requestsPerSec: 10, inputTokens: 4096, outputTokens: 512, ttftSloMs: 1000, tpotSloMs: 50, disaggregated: true, kvPrecision: 'bf16' }, model: llama3.model } });
     expect(gqa.inference?.attention).toBe('gqa');
     expect(gqa.inference?.kvBytesPerToken).toBe(2 * 126 * 8 * 128 * 2);
@@ -187,9 +187,97 @@ describe('traffic.ts — inference as a first-class Network/Cabling scenario', (
     expect(r.bytesPerStepByGroup.ep).toBeGreaterThan(0);
     expect(r.bytesPerStepByGroup.pd).toBeGreaterThan(0);
     expect(r.groupTier?.pd).toMatch(/leaf/);
-    expect(r.inference).toMatchObject({ requestsPerSec: 120, allocatedGpus: 384, replicas: 8, disaggregated: true, prefillInstanceGpus: 16, decodeInstanceGpus: 32 });
+    expect(r.inference).toMatchObject({ requestsPerSec: 120, allocatedGpus: 384, replicas: 24, disaggregated: true, prefillInstanceGpus: 8, decodeInstanceGpus: 8 });
     expect(r.inference!.kvTransferGbps).toBeGreaterThan(0);
     expect(r.perTier.find((x) => x.tier === 'leaf')!.utilization).toBeGreaterThan(0);
+  });
+
+  it('uses separate configured DP counts for prefill and decode endpoint load', () => {
+    const r = computeInferenceTraffic({
+      ...serving,
+      inference: {
+        ...serving.inference,
+        prefillParallelism: { ...serving.inference.prefillParallelism!, dp: 2 },
+        decodeParallelism: { ...serving.inference.decodeParallelism!, dp: 5 },
+      },
+    });
+    expect(r.inference).toMatchObject({ allocatedGpus: 56, prefillReplicas: 2, decodeReplicas: 5 });
+    expect(r.notes[0]).toContain('prefill DP2 and decode DP5');
+  });
+
+  it('keeps one explicit stage DP and auto-fills the other stage', () => {
+    const r = computeInferenceTraffic({
+      ...serving,
+      inference: {
+        ...serving.inference,
+        prefillParallelism: { ...serving.inference.prefillParallelism!, dp: 3 },
+      },
+    });
+    // 3 × 8-GPU prefill replicas leave 360 GPUs for 45 whole 8-GPU decode replicas.
+    expect(r.inference).toMatchObject({ allocatedGpus: 384, prefillReplicas: 3, decodeReplicas: 45 });
+    expect(r.notes[0]).toContain('prefill DP3 and decode DP45');
+  });
+
+  it('normalizes a single-inference percentage to the busiest endpoint after replica splitting', () => {
+    const one = computeInferenceTraffic(serving);
+    const twiceTheReplicas = computeInferenceTraffic({ ...serving, gpus: serving.gpus * 2 });
+    const oneLeaf = one.perTier.find((x) => x.tier === 'leaf')!;
+    const twoLeaf = twiceTheReplicas.perTier.find((x) => x.tier === 'leaf')!;
+    expect(twiceTheReplicas.inference?.replicas).toBe((one.inference?.replicas ?? 0) * 2);
+    // RPS is divided across twice as many identical instances: this is an endpoint value, not facility total ÷ one link.
+    expect(twoLeaf.bytesPerStepGB).toBeCloseTo(oneLeaf.bytesPerStepGB / 2, 9);
+    expect(twoLeaf.utilization).toBeCloseTo(oneLeaf.utilization / 2, 9);
+  });
+
+  it('keeps 800G switch-port and 400G NIC-endpoint capacity distinct', () => {
+    const r = computeInferenceTraffic({
+      ...serving,
+      gpu: {
+        ...serving.gpu,
+        nicGbps: 400,
+        scaleOutNicPortsPerGpu: 1,
+        scaleOutNicPortGbps: 400,
+        scaleOutSwitchName: 'Test 800G leaf',
+        scaleOutSwitchPortGbps: 800,
+        scaleOutSwitchPortsPerGpu: 0.5,
+      },
+    });
+    expect(r.physical).toMatchObject({
+      scaleOutRawGBpsPerGpu: 50,
+      scaleOutEffectiveGBpsPerGpu: 47.5,
+      scaleOutSwitchRawGBps: 100,
+      scaleOutSwitchPortsPerGpu: 0.5,
+    });
+    expect(r.perTier.find((x) => x.tier === 'leaf')?.capacityGBps).toBeCloseTo(47.5, 9);
+  });
+
+  it('reduces prefill and P/D traffic for a warm prefix without changing the logical input length', () => {
+    const cold = computeInferenceTraffic(serving);
+    const warm = computeInferenceTraffic({
+      ...serving,
+      inference: { ...serving.inference, cachedPrefixTokens: serving.inference.inputTokens / 2 },
+    });
+    expect(warm.inference?.kvTransferGbps).toBeCloseTo(cold.inference!.kvTransferGbps / 2, 9);
+    expect(warm.bytesPerStepByGroup.pd!).toBeCloseTo(cold.bytesPerStepByGroup.pd! / 2, 9);
+    expect(warm.notes.some((note) => note.includes('2048 uncached prefill of 4096 input'))).toBe(true);
+  });
+
+  it('models remote cache retrieval for an aggregated AgentX trace without inventing P/D traffic', () => {
+    const trace = computeInferenceTraffic({
+      ...serving,
+      inference: {
+        ...serving.inference,
+        disaggregated: false,
+        prefixCacheTrace: {
+          benchmarkId: 'agentx-test', source: 'test trace', accelerator: 'test GPU',
+          gpuHitRate: 0.5, cpuHitRate: 0.2, externalHitRate: 0.25,
+        },
+      },
+    });
+    expect(trace.inference).toMatchObject({ disaggregated: false, gpuCacheHitRate: 0.5, remoteCacheHitRate: 0.25 });
+    expect(trace.inference!.remoteCacheTransferGbps).toBeGreaterThan(0);
+    expect(trace.inference!.kvTransferGbps).toBeCloseTo(trace.inference!.remoteCacheTransferGbps!, 9);
+    expect(trace.bytesPerStepByGroup.pd).toBeGreaterThan(0);
   });
 
   it('runs from an inference-only project and honours the selected Traffic workload', () => {
