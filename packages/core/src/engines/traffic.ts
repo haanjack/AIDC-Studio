@@ -355,7 +355,7 @@ export function computeTraffic(spec: TrafficSpec): TrafficReport {
   // schedule from the framework mode the blueprint already carries; v defaults to a vendor-recipe interleave depth
   const frameworkMode = spec.overlapFramework ?? 'fsdp-prefetch';
   const schedule: '1f1b' | 'interleaved' | 'dualpipe' = frameworkMode === 'dualpipe' ? 'dualpipe' : frameworkMode === 'megatron-no-overlap' ? '1f1b' : 'interleaved';
-  const vStages = schedule === 'interleaved' ? clamp(Math.round(lStage / 4), 2, 8) : 1;
+  const vStages = schedule === 'interleaved' ? clamp(Math.floor(lStage), 1, 8) : 1; // ≈ one layer per virtual stage, max 8 — reproduces ISCA 5 %/12 % (v = 8) and is the depth η_k(H100) was fitted at
   const bubble = pipelineBubble(pp, m, schedule, vStages);
   const compFor = (eta: number) => ((tIdealS * amdahl) / Math.max(0.05, eta)) * kappaTp;
   let etaK = etaTable.value;
