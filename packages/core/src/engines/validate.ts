@@ -237,18 +237,16 @@ export function validateProjectCtx(ctx: Ctx, r: Inputs): Issue[] {
     }
     // fix v2 2차 (QA): MoE trained with EP ≤ 1 puts no expert all-to-all on the fabric; per-GPU memory feasibility of weights + optimizer
     if (bp.training && (bp.model.moe?.experts ?? 1) > 1 && (bp.training.ep ?? 1) <= 1) add({ id: `workload-moe-ep1-${wl.workloadId}`, severity: 'warning', domain: 'workload', message: `${bp.name}: MoE 모델(전문가 ${bp.model.moe!.experts}개)을 EP 1로 학습합니다 — 전문가 all-to-all 바이트가 0이 되어 스텝 시간이 낙관적입니다.`, suggestion: 'EP를 전문가 수에 맞게 설정하세요 (예: DeepSeek-V3 EP64).', messageEn: `${bp.name}: MoE model (${bp.model.moe!.experts} experts) trained with EP 1 — expert all-to-all bytes are 0 and the step time is optimistic.`, suggestionEn: 'Set EP to match the expert count (e.g. DeepSeek-V3 EP64).' });
-    if (bp.training && wl.gpus > 0) {
-      const tr = bp.training;
-      // Match the workload engine: heterogeneous projects use the GPU-rack model carrying the most GPUs.
-      const gpuRack = ctx.gpuRack;
-      const hbm = gpuRack?.compute?.gpuMemoryGB ?? 0;
-      const mp = Math.max(1, (tr.tp ?? 1) * (tr.pp ?? 1) * (tr.ep ?? 1) * (tr.cp ?? 1));
-      const dp = Math.max(1, Math.floor(wl.gpus / mp));
-      const z = tr.zeroStage ?? 0;
-      const P = bp.model.paramsB * 1e9;
-      // mixed-precision Adam: 2 B weights + 2 B grads + 12 B optimizer per parameter; ZeRO-1/2/3 shard optimizer / grads / weights over DP (estimate)
-      const perGpuGB = (P * (2 / (z >= 3 ? dp : 1) + 2 / (z >= 2 ? dp : 1) + 12 / (z >= 1 ? dp : 1))) / ((tr.tp ?? 1) * (tr.pp ?? 1) * (tr.ep ?? 1)) / 1e9;
-      if (hbm > 0 && perGpuGB > hbm) add({ id: `workload-memory-${wl.workloadId}`, severity: 'warning', domain: 'workload', message: `${bp.name}: GPU당 가중치+옵티마이저 ${perGpuGB.toFixed(0)} GB가 HBM ${hbm} GB를 넘습니다 (TP·PP·EP = ${(tr.tp ?? 1) * (tr.pp ?? 1) * (tr.ep ?? 1)}, ZeRO ${z}, 활성값 제외, 추정).`, suggestion: 'TP / PP / EP 또는 ZeRO 단계를 늘리세요.', messageEn: `${bp.name}: weights + optimizer ${perGpuGB.toFixed(0)} GB per GPU exceed the ${hbm} GB HBM (TP·PP·EP = ${(tr.tp ?? 1) * (tr.pp ?? 1) * (tr.ep ?? 1)}, ZeRO ${z}, activations excluded, estimate).`, suggestionEn: 'Raise TP / PP / EP or the ZeRO stage.' });
+    // training memory: ONE definition (workload/training.ts) — the engine attaches it to the analysis even when it drops the plan
+    if (bp.training && wl.memory) {
+      const m = wl.memory;
+      const topo = `TP ${m.topology.tp} · CP ${m.topology.cp} · PP ${m.topology.pp} · EP ${m.topology.ep} · DP ${m.topology.dp} · ZeRO ${m.zeroStage} · ${m.recompute === 'none' ? '재계산 없음' : m.recompute === 'full' ? '전체 재계산' : '선택 재계산'}`;
+      const topoEn = `TP ${m.topology.tp} · CP ${m.topology.cp} · PP ${m.topology.pp} · EP ${m.topology.ep} · DP ${m.topology.dp} · ZeRO ${m.zeroStage} · recompute ${m.recompute}`;
+      const first = m.proposals.find((p) => p.fits);
+      const fix = first ? ` 제안: ${first.change === 'zeroStage' ? 'ZeRO-3' : first.change === 'activationRecompute' ? '활성값 재계산' : first.change === 'microBatchSeqs' ? '마이크로배치 1' : `${first.change.toUpperCase()} ${String(Object.values(first.patch)[0])}`} → ${first.totalGBPerGpu.toFixed(0)} GB.` : '';
+      const fixEn = first ? ` Proposal: ${first.change === 'zeroStage' ? 'ZeRO-3' : first.change === 'activationRecompute' ? 'activation recompute' : first.change === 'microBatchSeqs' ? 'micro-batch 1' : `${first.change.toUpperCase()} ${String(Object.values(first.patch)[0])}`} → ${first.totalGBPerGpu.toFixed(0)} GB.` : '';
+      if (wl.memoryInfeasible) add({ id: `workload-memory-${wl.workloadId}`, severity: 'error', domain: 'workload', message: `${bp.name}: GPU당 메모리 하한 ${m.floorGBPerGpu.toFixed(0)} GB(시퀀스 1개 · 전체 재계산 · ZeRO-3)가 가용 HBM ${m.usableHbmGB.toFixed(0)} GB를 넘어 어떤 스케줄로도 실행할 수 없습니다 (${topo}).${fix}`, suggestion: 'TP / PP / CP를 늘리거나 HBM이 큰 가속기를 선택하세요.', messageEn: `${bp.name}: per-GPU memory floor ${m.floorGBPerGpu.toFixed(0)} GB (one sequence · full recompute · ZeRO-3) exceeds the usable ${m.usableHbmGB.toFixed(0)} GB HBM — no schedule can run it (${topoEn}).${fixEn}`, suggestionEn: 'Raise TP / PP / CP or pick an accelerator with more HBM.' });
+      else if (!m.fits) add({ id: `workload-memory-${wl.workloadId}`, severity: 'warning', domain: 'workload', message: `${bp.name}: GPU당 메모리 ${m.totalGBPerGpu.toFixed(0)} GB(정적 ${(m.weightsGBPerGpu + m.gradientsGBPerGpu + m.optimizerGBPerGpu).toFixed(0)} + 활성값 ${(m.activationsGBPerGpu + m.logitsGBPerGpu).toFixed(0)} + 일시 ${m.transientGBPerGpu.toFixed(0)})가 가용 HBM ${m.usableHbmGB.toFixed(0)} GB를 넘습니다 (${topo}, ${m.confidence === 'validated' ? '검증 대역' : '외삽 대역'} 예비 ${Math.round(m.reserveBand[1] * 100)} %).${fix}`, suggestion: 'ZeRO 단계 · 활성값 재계산 · 마이크로배치를 먼저 조정하고, 그래도 부족하면 TP / PP / CP를 늘리세요.', messageEn: `${bp.name}: per-GPU memory ${m.totalGBPerGpu.toFixed(0)} GB (static ${(m.weightsGBPerGpu + m.gradientsGBPerGpu + m.optimizerGBPerGpu).toFixed(0)} + activations ${(m.activationsGBPerGpu + m.logitsGBPerGpu).toFixed(0)} + transient ${m.transientGBPerGpu.toFixed(0)}) exceeds the usable ${m.usableHbmGB.toFixed(0)} GB HBM (${topoEn}, ${m.confidence} band, ${Math.round(m.reserveBand[1] * 100)} % reserve).${fixEn}`, suggestionEn: 'Adjust the ZeRO stage, activation recompute and micro-batch first; raise TP / PP / CP if that is not enough.' });
     }
     if (bp.inference) {
       const inf = bp.inference;

@@ -8,8 +8,8 @@
 // Rules carried over from the inference-sweep audit: the pool is sized from the analysed share (Σ gpuShare > 1 scales it,
 // exactly as the simulation result the user sees), NOTHING is truncated (enumerated = ranked + rejected, every rejection
 // carries a reason), the user's own configuration is always present and marked, and TP above 8 is flagged as
-// extrapolation because κ_tp has no public support there. There is no training memory model yet, so feasibility is NOT
-// checked — `memoryChecked: false` says so rather than implying it.
+// extrapolation because κ_tp has no public support there. Every candidate is checked against the training memory FLOOR
+// (workload/training.ts: one sequence · full recompute · ZeRO-3) before it is ranked — `memoryChecked: true`.
 
 import type { Project, WorkloadBlueprint } from '../model/types.ts';
 import { analyzeCoolingCtx } from './cooling.ts';
@@ -17,10 +17,11 @@ import { buildContext } from './context.ts';
 import { analyzeNetworkCtx } from './network.ts';
 import { analyzePowerCtx } from './power.ts';
 import { analyzeTraffic } from './traffic.ts';
+import { trainingMemoryEstimate } from '../workload/training.ts';
 import { analysedBlueprint, jobClusterGpus, simulateTraining, workloadEnv } from './workload.ts';
 import type { TrainingTopologyPatch } from '../workload/apply.ts';
 
-export type TrainingTopologyReason = 'heads' | 'experts' | 'expert-placement' | 'pool' | 'engine';
+export type TrainingTopologyReason = 'heads' | 'experts' | 'expert-placement' | 'pool' | 'memory' | 'engine';
 
 export interface TrainingTopologyCandidate {
   id: string;
@@ -63,8 +64,8 @@ export interface TrainingTopologyReport {
   evaluated: number;
   feasible: number;
   rejected: number;
-  /** no training memory model exists yet — candidates are NOT checked for HBM fit */
-  memoryChecked: false;
+  /** every candidate passed the training memory floor (workload/training.ts) before it was ranked; 'memory' rejections list the rest */
+  memoryChecked: true;
   /** status 'ok', ascending time-to-train; ties → fewer stranded GPUs, then smaller tp, cp, pp, ep */
   ranked: TrainingTopologyCandidate[];
   rejectedList: TrainingTopologyCandidate[];
@@ -139,6 +140,9 @@ export function analyzeTrainingWorkloadTopologies(project: Project, workload: Wo
     // expert parallelism is carved out of the DP·CP ranks (Megatron-Core / DeepSeek-V3), so it cannot exceed them
     else if (experts > 0 && ep > Math.max(1, dp) * cp) reason = 'expert-placement';
     else if (dp < 1) reason = 'pool';
+    // memory floor (one sequence · full recompute · ZeRO-3): a candidate that cannot load under ANY schedule is rejected before the
+    // step model runs; a candidate that loads only after knobs change stays ranked — the result card shows the knobs
+    else { const mem = trainingMemoryEstimate({ ...analysed, training: { ...t, tp, cp, pp, ep } }, { tp, cp, pp, ep }, compute.gpuMemoryGB ?? 0, U, allocated, { noProposals: true }); if (mem && !mem.floorFits) reason = 'memory'; }
     if (reason) {
       candidates.push({ ...base, status: 'rejected', reason });
       continue;
@@ -176,7 +180,7 @@ export function analyzeTrainingWorkloadTopologies(project: Project, workload: Wo
 
   const notes: string[] = [
     `Ranked by time-to-train on the placed ${compute.gpuModel} cluster (${allocated} GPUs allocated of ${clusterGpus}); every candidate ran analyzeTraffic + simulateTraining. Nothing was truncated: ${enumerated} enumerated = ${ranked.length} ranked + ${rejectedList.length} rejected.`,
-    'HBM fit is NOT checked — there is no training memory model yet, so a fast candidate may not load. Treat the ranking as a step-time ordering, not a feasibility verdict.',
+    'HBM floor checked per candidate (one sequence · full recompute · ZeRO-3); candidates that cannot load under any schedule are rejected with reason memory. Whether the configured batch / ZeRO stage fits is reported by simulateTraining (memoryOverBudget).',
     `Evidence basis: the TP axis (1–8) is calibrated on Hagemann et al. (A100 TP×PP sweeps) and Meta ISCA'25; PP × micro-batch on ISCA and Zero Bubble bubble ratios; CP and EP rest on single published points (ISCA CP16 exposure, MoE Parallel Folding). TP above 8 and TP across the scale-up domain (${U}) are direction-only.`,
   ];
   if (selected && selected.status === 'rejected') notes.push(`The configured topology tp${cfg.tp}/cp${cfg.cp}/pp${cfg.pp}/ep${cfg.ep} is not legal on this cluster (${selected.reason}).`);
@@ -192,7 +196,7 @@ export function analyzeTrainingWorkloadTopologies(project: Project, workload: Wo
     evaluated: candidates.length - rejectedList.filter((c) => c.reason !== 'engine' && c.reason !== 'pool').length,
     feasible: ranked.length,
     rejected: rejectedList.length,
-    memoryChecked: false,
+    memoryChecked: true,
     ranked,
     rejectedList,
     selected,

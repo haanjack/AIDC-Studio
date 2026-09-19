@@ -47,6 +47,7 @@ export * from './workload/calibration.ts';
 export * from './workload/shares.ts';
 export * from './workload/inference.ts';
 export * from './workload/apply.ts'; // analysis → configuration write-back (apply-back)
+export * from './workload/training.ts'; // training memory model (per-GPU HBM by TP/CP/PP/EP/ZeRO/recompute)
 export * from './workload/inferencex.ts';
 export * from './workload/inferencexRegression.ts';
 export * from './catalog/images.ts';

@@ -3,7 +3,7 @@ import {
   acceleratorPeakSource, analyzeInferenceWorkloadPareto, applyModelPreset, BENCHMARKS, calibrateFromBenchmark, calibrationRecord, catalogItems, REF_POD_TEMPLATE, effectiveShare, fitInferenceXRegression, INFERENCEX_MODELS,
   fillRemainder, findBenchmark, findCatalogItem, findModelPreset, INFERENCE_HBM_UTILIZATION, inferenceMemoryEstimate, inferenceParallelismFor, inferencePromptTokens, inferenceReplicaGpus, inferenceXModelName, inferenceXPerformanceCurves, inferenceXPredictionBenchmark, MFU_DEFAULT, MODEL_PRESETS, NODE_SPECS, normalizeShares, peakFlopsFor, podSizing, predictInferenceXPerformance, rankInferenceXBenchmarks, rankInferenceXCacheBenchmarks,
   applyWorkloadPatch, paretoPointPatch, presetModifiedFields, scaleWarning, shareState, takeShareDetailed, workloadPatchChanges,
-  analyzeTrainingWorkloadTopologies, trainingCandidatePatch, type TrainingTopologyCandidate, type TrainingTopologyReport,
+  analyzeTrainingWorkloadTopologies, trainingCandidatePatch, type TrainingTopologyCandidate, type TrainingTopologyReport, type TrainingMemoryEstimate, trainingRecomputeFlopFactor,
   type BenchmarkRow, type CalibrationPrecision, type CalibrationWarning, type CatalogItem, type SizingSuggestion, type UserMeasurement,
   type InferenceMemoryEstimate, type InferenceParallelism, type InferenceWorkloadParetoPoint, type InferenceWorkloadParetoReport, type InferenceXCacheBenchmark, type InferenceXHardwarePrediction, type InferenceXPerformanceCurvePoint, type InferenceXPerformanceCurveReport, type InferenceXPredictionReport, type WorkloadAnalysis, type WorkloadBlueprint, type WorkloadKind,
 } from '@aidc/core';
@@ -312,6 +312,32 @@ function InferenceWorkloadParetoCard({ report, t, onApply }: {
   );
 }
 
+function TrainingMemoryCard({ m, infeasible, t, onPatch }: { m: TrainingMemoryEstimate; infeasible?: boolean; t: Translate; onPatch: (p: Partial<NonNullable<WorkloadBlueprint['training']>>) => void }) {
+  const staticGB = m.weightsGBPerGpu + m.gradientsGBPerGpu + m.optimizerGBPerGpu;
+  return (
+    <div style={{ margin: '8px 0' }}>
+      <div className="row wrap" style={{ gap: 6 }}>
+        <StatusLabel severity={m.fits ? 'good' : infeasible ? 'error' : 'warning'}>{t(m.fits ? 'workload.memory.train.fits' : infeasible ? 'workload.memory.train.infeasible' : 'workload.memory.train.oom')}</StatusLabel>
+        <span className="hint">{t('workload.memory.train.breakdown', {
+          static: fmtMemoryGB(staticGB), act: fmtMemoryGB(m.activationsGBPerGpu + m.logitsGBPerGpu), transient: fmtMemoryGB(m.transientGBPerGpu), used: fmtMemoryGB(m.totalGBPerGpu),
+          usable: fmtMemoryGB(m.usableHbmGB), physical: fmtMemoryGB(m.gpuMemoryGB), pct: fmtPct(m.hbmUtilization),
+        })}</span>
+      </div>
+      <p className="caption" style={{ margin: '4px 0 0' }}>{t('workload.memory.train.basis', { dp: m.topology.dp, z: m.zeroStage, recompute: t(`workload.memory.train.recompute.${m.recompute}`), inflight: m.inflightMicroBatches.toFixed(1), floor: fmtMemoryGB(m.floorGBPerGpu), conf: t(`workload.memory.train.confidence.${m.confidence}`) })}</p>
+      {!m.fits && m.proposals.length > 0 && (
+        <div className="row wrap" style={{ gap: 6, marginTop: 5 }}>
+          <span className="hint">{t('workload.memory.train.proposals')}</span>
+          {m.proposals.map((p) => (
+            <button key={p.change} className="btn sm" style={p.fits ? undefined : { opacity: 0.6 }} title={p.noteEn} onClick={() => onPatch(p.patch)}>
+              {t(`workload.memory.train.p.${p.change}`, { v: String(Object.values(p.patch)[0]) })} → {fmtMemoryGB(p.totalGBPerGpu)}{p.fits ? ' ✓' : ''}{p.crossesScaleUp ? ' ⚠' : ''}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function TrainingTopologyCard({ report, t, onApply }: { report: TrainingTopologyReport; t: Translate; onApply: (c: TrainingTopologyCandidate) => void }) {
   const top = report.ranked.slice(0, 12);
   const best = report.ranked[0];
@@ -406,7 +432,7 @@ export function WorkloadPanel() {
     if (!wl || !gpuRack || !c || c.gpus <= 0) return null;
     const m = wl.model;
     const n = m.activeParamsB * 1e9;
-    const flopsPerToken = (wl.training?.activationRecompute ? 8 : 6) * n + (wl.training?.activationRecompute ? 16 : 12) * m.layers * m.hiddenSize * m.seqLen;
+    const flopsPerToken = (6 * n + 12 * m.layers * m.hiddenSize * m.seqLen) * trainingRecomputeFlopFactor(wl.training);
     const peak = peakFlopsFor(c, precision);
     let gpus: number;
     let note: string;
@@ -791,6 +817,7 @@ export function WorkloadPanel() {
                   <SelectField label={t('workload.f.zero')} value={String(tr.zeroStage ?? 1)} options={['0', '1', '2', '3'].map((v) => ({ value: v, label: t(`workload.zero.${v}`) }))} onChange={(v) => setW((w) => { w.training!.zeroStage = Number(v) as 0 | 1 | 2 | 3; })} hint={<Affects tags={['bytes', 'memory']} text={t('workload.h.zero')} t={t} />} />
                   <NumberField label={t('workload.f.microBatch')} unit="seq" value={tr.microBatchSeqs ?? 1} min={1} onChange={(v) => setW((w) => { w.training!.microBatchSeqs = Math.round(v); })} hint={<Affects tags={['compute', 'bytes']} text={t('workload.h.microBatch')} t={t} />} />
                 </div>
+                {wa?.memory && <TrainingMemoryCard m={wa.memory} infeasible={wa.memoryInfeasible} t={t} onPatch={(p) => setW((w) => { Object.assign(w.training!, p); })} />}
               </Section>
               <Section title={t('workload.group.training')}>
                 <div className="fields-2">
@@ -914,6 +941,10 @@ export function WorkloadPanel() {
               {tr && wl.kind !== 'llm-inference' && (
                 <Field label={t('workload.f.recompute')} hint={<Affects tags={['compute']} text={t('workload.h.recompute')} t={t} />}>
                   <Toggle label={tr.activationRecompute ? t('workload.f.recomputeOn') : t('workload.f.recomputeOff')} checked={!!tr.activationRecompute} onChange={(v) => setW((w) => { w.training!.activationRecompute = v; })} />
+                  {tr.activationRecompute && <select className="input" style={{ marginTop: 4 }} value={tr.activationRecomputeMode ?? 'full'} onChange={(e) => setW((w) => { w.training!.activationRecomputeMode = e.target.value as 'full' | 'selective'; })}>
+                    <option value="full">{t('workload.recomputeMode.full')}</option>
+                    <option value="selective">{t('workload.recomputeMode.selective')}</option>
+                  </select>}
                 </Field>
               )}
             </div>

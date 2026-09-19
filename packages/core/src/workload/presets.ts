@@ -1389,6 +1389,9 @@ export function presetModelFields(p: ModelPreset): Omit<WorkloadBlueprint['model
   };
   if (p.headDim) m.headDim = p.headDim;
   if (p.kvCacheLayerFraction) m.kvCacheLayerFraction = p.kvCacheLayerFraction;
+  // FFN widths drive training activation memory (workload/training.ts); dense presets carry denseFfn at the top level, MoE presets under moe
+  const ffn = p.denseFfn ?? p.moe?.denseFfn;
+  if (ffn && ffn > 0) m.ffnHidden = ffn;
   const window = p.attention?.slidingWindow ?? p.attention?.chunkSize;
   if (window) m.attentionWindow = window;
   const gli = presetGlobalLayerInterval(p);
@@ -1398,6 +1401,7 @@ export function presetModelFields(p: ModelPreset): Omit<WorkloadBlueprint['model
     if (p.moe.shared) m.moe.shared = p.moe.shared;
     if (p.moe.denseLayers) m.moe.denseLayers = p.moe.denseLayers;
     if (p.moe.moeLayerInterval) m.moe.moeLayerInterval = p.moe.moeLayerInterval;
+    if (p.moe.expertFfn && p.moe.expertFfn > 0) m.moe.expertFfn = p.moe.expertFfn;
     // node-limited routing is a DeepSeek-V3/R1 training property (tech report: M = 4); other presets publish none
     if (p.id === 'deepseek-v3' || p.id === 'deepseek-r1') m.moe.nodeLimit = 4;
   }
@@ -1410,7 +1414,7 @@ export function applyModelPreset(model: WorkloadBlueprint['model'], p: ModelPres
   return { ...presetModelFields(p), seqLen: Math.min(model.seqLen, p.contextLen) };
 }
 
-const PRESET_KEYS = ['paramsB', 'activeParamsB', 'layers', 'hiddenSize', 'numHeads', 'kvHeads', 'vocab', 'headDim', 'attentionWindow', 'globalLayerInterval', 'kvCacheLayerFraction'] as const;
+const PRESET_KEYS = ['paramsB', 'activeParamsB', 'layers', 'hiddenSize', 'numHeads', 'kvHeads', 'vocab', 'headDim', 'attentionWindow', 'globalLayerInterval', 'kvCacheLayerFraction', 'ffnHidden'] as const;
 
 /** Architecture fields where the blueprint differs from its preset ([] = unmodified; undefined preset → []). */
 export function presetModifiedFields(w: Pick<WorkloadBlueprint, 'model' | 'presetId'>): string[] {
@@ -1419,7 +1423,7 @@ export function presetModifiedFields(w: Pick<WorkloadBlueprint, 'model' | 'prese
   const ref = presetModelFields(p);
   const out: string[] = [];
   for (const k of PRESET_KEYS) if ((ref[k] ?? undefined) !== (w.model[k] ?? undefined)) out.push(k);
-  const moeKeys = ['experts', 'topK', 'shared', 'denseLayers', 'moeLayerInterval'] as const;
+  const moeKeys = ['experts', 'topK', 'shared', 'denseLayers', 'moeLayerInterval', 'expertFfn'] as const;
   if (!!ref.moe !== !!w.model.moe) out.push('moe');
   else if (ref.moe && w.model.moe) for (const k of moeKeys) if ((ref.moe[k] ?? undefined) !== (w.model.moe[k] ?? undefined)) out.push(`moe.${k}`);
   if (!!ref.mla !== !!w.model.mla) out.push('mla');

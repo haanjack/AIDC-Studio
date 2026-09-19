@@ -5,6 +5,7 @@ import { ETA_HOST_SOURCE } from './eta.ts';
 import { analyzeNetworkCtx, etaFor, type NetworkResult } from './network.ts';
 import { l2l3Verdict } from './radix.ts';
 import { inferenceExpertCollectiveGpus, inferenceParallelismFor, inferencePromptTokens, inferenceReplicaGpus } from '../workload/inference.ts';
+import { TRAINING_ZERO_STAGE_DEFAULT, trainingRecomputeFlopFactor } from '../workload/training.ts';
 
 /**
  * Deterministic workload → network traffic engine (stream S2, PROPOSAL-v2 §3.3, docs/research/network-sim.md §2–§3 + review C1/C2/C6/C7;
@@ -343,8 +344,10 @@ export function computeTraffic(spec: TrafficSpec): TrafficReport {
   const tokensPerReplica = tokensStep / dp;
   const m = Math.max(1, Math.round(tokensPerReplica / (b * s)));
   const lStage = L / pp;
-  const recompute = !!t.activationRecompute;
-  const flopsPerToken = recompute ? 8 * nActive + 16 * L * h * s : 6 * nActive + 12 * L * h * s;
+  // recompute: full re-runs the forward (8N + 16Lhs, Megatron form); selective (op-SAC) adds ~5 % — one factor shared with the memory model
+  const recomputeFactor = trainingRecomputeFlopFactor(t);
+  const recompute = recomputeFactor > 1.2; // full recompute (lengthens the backward window DP can hide behind)
+  const flopsPerToken = (6 * nActive + 12 * L * h * s) * recomputeFactor;
   const flopsStep = tokensStep * flopsPerToken;
   // ── compute path: T_comp = T_ideal · amdahl(precision) / η_k · κ_tp(t) · (1 + β) — see COMPUTE_EFFICIENCY_BF16 ──
   const tIdealS = flopsStep / (gpus * gpu.peakFlops);
@@ -370,7 +373,7 @@ export function computeTraffic(spec: TrafficSpec): TrafficReport {
   const cpBytes = cp > 1 ? (3 * m * lStage * 2 * b * kvSeq * nKv * dHead * B_ACT * ((cp - 1) / cp)) / tp : 0;
   const ppBytes = pp > 1 ? (2 * m * b * s * h * B_ACT) / (tp * cp) : 0;
   const psi = nTotal / (tp * pp * (model.moe ? ep : 1));
-  const stage = t.zeroStage ?? 1;
+  const stage = t.zeroStage ?? TRAINING_ZERO_STAGE_DEFAULT; // one default, shared with the memory model (was 1 here vs 0 in the validator)
   const dpBytes = dp > 1 ? (stage >= 3 ? (2 * B_W + B_G) * psi : 2 * B_G * psi) * ((dp - 1) / dp) : 0;
   const moe = model.moe;
   const tokensPerGpu = tokensStep / dp;
@@ -681,7 +684,7 @@ export function computeTraffic(spec: TrafficSpec): TrafficReport {
   // ── notes ──
   const overlapTxt = G.filter((g) => groups[g].timeS > 0).map((g) => `${g.toUpperCase()} f ${groups[g].f.toFixed(3)} (${spec.overlap?.[g] != null ? 'user' : odef[g].sourceType}, ${groups[g].state})`).join(' · ');
   notes.unshift(
-    `Compute ${recompute ? '8·N_active + 16·L·h·s (activation recompute, Megatron 96-form)' : '6·N_active + 12·L·h·s (PaLM App. B)'} = ${(flopsStep / 1e18).toFixed(2)} EFLOP/step; T_ideal ${tIdealS.toFixed(2)} s → T_comp ${tComp.toFixed(2)} s = T_ideal × amdahl ${amdahl.toFixed(2)} ÷ η_k ${etaK.toFixed(3)} (${calibrated ? 'inverted from the end-to-end calibration' : `${accClass} ${etaTable.sourceType}, band ${etaTable.lo}–${etaTable.hi}`}) × κ_tp ${kappaTp.toFixed(3)} × (1 + β ${(bubble * 100).toFixed(1)} %). Predicted end-to-end MFU ${(mfuEff * 100).toFixed(1)} %.`,
+    `Compute ${recompute ? '8·N_active + 16·L·h·s (full activation recompute, Megatron 96-form)' : recomputeFactor > 1 ? '(6·N_active + 12·L·h·s) × 1.05 (selective op-SAC recompute, estimate)' : '6·N_active + 12·L·h·s (PaLM App. B)'} = ${(flopsStep / 1e18).toFixed(2)} EFLOP/step; T_ideal ${tIdealS.toFixed(2)} s → T_comp ${tComp.toFixed(2)} s = T_ideal × amdahl ${amdahl.toFixed(2)} ÷ η_k ${etaK.toFixed(3)} (${calibrated ? 'inverted from the end-to-end calibration' : `${accClass} ${etaTable.sourceType}, band ${etaTable.lo}–${etaTable.hi}`}) × κ_tp ${kappaTp.toFixed(3)} × (1 + β ${(bubble * 100).toFixed(1)} %). Predicted end-to-end MFU ${(mfuEff * 100).toFixed(1)} %.`,
     `Parallelism TP${tp}·CP${cp}·PP${pp} = ${tpp} GPUs per replica, DP ${dp}${moe ? `, EP ${ep}` : ''}; micro-batches ${m} × ${b} seq; schedule ${schedule}${schedule === 'interleaved' ? ` (v = ${vStages})` : ''} → bubble ${(bubble * 100).toFixed(1)} % applied to the step${bindingGroup ? `; binding group ${bindingGroup.toUpperCase()} (${groups[bindingGroup].state})` : ''}.`,
     `Group placement — TP: ${groups.tp.tier}, CP: ${groups.cp.tier}, PP: ${groups.pp.tier}, DP: ${groups.dp.tier} (members per NVLink domain ${mU}, per pod ${mL}, per spine domain ${mS})${moe ? `, EP: ${groups.ep.tier}` : ''}.`,
     `η_fabric = ${eta} on spine/core tiers (${fabric.eta.class}; ${fabric.eta.citation})${etaA2a !== eta ? `; η_A2A = ${etaA2a.toFixed(3)} for expert all-to-all (measured alltoall)` : ''}; η_host (NIC busbw) = ${nicBusbw}.${fabric.sharp ? ' SHARP in-network reduction halves DP bytes on the NIC tiers (IB).' : ''}`,

@@ -19,7 +19,7 @@ describe('training topology sweep on the placed cluster', () => {
     const { project, workload } = trainingCase();
     const report = analyzeTrainingWorkloadTopologies(project, workload)!;
     expect(report).toBeDefined();
-    expect(report.memoryChecked).toBe(false);
+    expect(report.memoryChecked).toBe(true);
     expect(report.ranked.length).toBeGreaterThan(3);
     expect(report.enumerated).toBe(report.ranked.length + report.rejectedList.length);
     for (const c of report.rejectedList) expect(c.reason).toBeTruthy();

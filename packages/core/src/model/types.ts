@@ -928,9 +928,13 @@ export interface WorkloadBlueprint {
       denseLayers?: number;
       /** MoE every n-th layer (Llama 4 Maverick 2) — MoE layers = layers / moeLayerInterval */
       moeLayerInterval?: number;
+      /** per-expert FFN width (preset `moe.expertFfn`); lets expert parameters and activations be counted exactly */
+      expertFfn?: number;
     };
     /** MLA latent dims (DeepSeek-V2/V3: dLatent 512, dRope 64) — KV bytes/token = L·(dLatent+dRope)·B_kv; absent = GQA/MHA */
     mla?: { dLatent: number; dRope: number };
+    /** dense FFN hidden width (preset `denseFfn` / `moe.denseFfn`); absent = back-solved from the parameter count. Drives training activation memory. */
+    ffnHidden?: number;
     // ── v2 2차 (T6, DECISIONS-v2-2 §C head_dim; filled from MODEL_PRESETS) ──
     /** attention head dim when ≠ hiddenSize / numHeads (Qwen3 128, gpt-oss 64, GLM-4.5 128, Gemma 3 128) — KV / CP bytes must use it */
     headDim?: number;
@@ -961,6 +965,8 @@ export interface WorkloadBlueprint {
     microBatchSeqs?: number;
     /** activation recomputation on (Megatron 96·B·s·l·h² FLOP form) vs off (PaLM 6N + 12·L·h·s form). Default false. */
     activationRecompute?: boolean;
+    /** granularity when activationRecompute is on: 'full' (layer inputs only, +~33 % FLOPs) or 'selective' (torchtitan op-SAC saved set). Default 'full'. */
+    activationRecomputeMode?: 'selective' | 'full';
     /** assumed compute-path MFU incl. pipeline bubble (Llama 3 Tab.4: 0.43 BF16); absent = precision default */
     mfuAssumed?: number;
     /** v2 2차 (T2/T6): communication/compute overlap fractions per group (0..1), with a citation; absent = engine defaults */
@@ -1909,6 +1915,15 @@ export interface WorkloadTimePoint { t: number; powerKW: number; utilization: nu
 
 export interface WorkloadAnalysis {
   workloadId: Id;
+  // ── training memory (workload/training.ts): attached even when the engine drops the plan, so the validator never recomputes ──
+  /** per-GPU HBM decomposition for training blueprints */
+  memory?: import('../workload/training.ts').TrainingMemoryEstimate;
+  /** the schedule-independent floor does not fit — the engine returned no step model */
+  memoryInfeasible?: boolean;
+  /** the floor fits but the configured schedule does not — simulated and flagged */
+  memoryOverBudget?: boolean;
+  /** GPUs the analysed share allocates (before model-parallel rounding) */
+  allocatedGpus?: number;
   gpus: number;
   // training
   stepTimeS?: number;

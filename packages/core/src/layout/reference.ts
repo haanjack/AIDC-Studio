@@ -208,8 +208,9 @@ export function createReferenceProject(opts: ReferenceOptions = {}): { project: 
         kind: 'llm-pretrain',
         gpuShare: 0.8,
         model: { name: 'Dense-405B', paramsB: 405, activeParamsB: 405, layers: 126, hiddenSize: 16384, seqLen: 8192 },
-        // pp 8: the generic module class carries 141 GB (estimate), so weights + optimizer of a 405B model need TP·PP = 64 to fit
-        training: { tokensB: 15000, globalBatchTokensM: 16, precision: 'fp8', tp: 8, pp: 8, ep: 1, checkpointEveryMin: 30, checkpointDurationS: 90, mtbfHoursPerGpu: 50000 },
+        // pp 8: the generic module class carries 141 GB (estimate), so weights + optimizer of a 405B model need TP·PP = 64 to fit;
+        // selective recompute: 1F1B keeps pp micro-batches in flight on the first stage, ≈ 76 GB of saved activations without it (workload/training.ts)
+        training: { tokensB: 15000, globalBatchTokensM: 16, precision: 'fp8', tp: 8, pp: 8, ep: 1, activationRecompute: true, activationRecomputeMode: 'selective', checkpointEveryMin: 30, checkpointDurationS: 90, mtbfHoursPerGpu: 50000 },
         durationDays: 60,
       },
       {

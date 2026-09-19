@@ -4,6 +4,7 @@ import type { NetworkResult } from './network.ts';
 import { kvSeqEffective, moeLayerCount, peakFlopsFor } from './traffic.ts';
 import { effectiveShare, effectiveShares, shareState } from '../workload/shares.ts';
 import { inferenceCalibrationSignature, inferenceMemoryEstimate, inferenceParallelismFor, inferencePromptTokens, inferenceReplicaGpus } from '../workload/inference.ts';
+import { trainingMemoryEstimate } from '../workload/training.ts';
 import { findBenchmark } from '../workload/presets.ts';
 
 /**
@@ -118,6 +119,12 @@ export function simulateTraining(w: WorkloadBlueprint, env: WorkloadEnv): Worklo
   const t = w.training;
   if (!rack || !c || c.gpus <= 0) return empty(w, 'GPU 랙이 배치되지 않아 학습 시뮬레이션을 수행할 수 없습니다.', 'No GPU rack is placed — the training simulation cannot run.');
   if (!t) return empty(w, '학습 파라미터(training)가 정의되지 않았습니다.', 'Training parameters are not defined.');
+  // training memory (workload/training.ts) is estimated BEFORE any early return so the validator and the panel always see it;
+  // a floor that does not fit (one sequence, full recompute, ZeRO-3) is a hard stop — no schedule can rescue it
+  const allocatedRaw = Math.floor(clamp(w.gpuShare, 0, 1) * env.clusterGpus);
+  const memory = trainingMemoryEstimate(w, { tp: t.tp, cp: t.cp ?? 1, pp: t.pp, ep: t.ep }, c.gpuMemoryGB ?? 0, c.scaleUp.domainSize, allocatedRaw);
+  const memFields = memory ? { memory, allocatedGpus: allocatedRaw } : { allocatedGpus: allocatedRaw };
+  if (memory && !memory.floorFits) return { ...empty(w, `GPU당 최소 메모리 ${memory.floorGBPerGpu.toFixed(0)} GB(시퀀스 1개 · 전체 재계산 · ZeRO-3)가 가용 HBM ${memory.usableHbmGB.toFixed(0)} GB를 넘습니다 — TP/PP/CP를 늘리세요.`, `Per-GPU memory floor ${memory.floorGBPerGpu.toFixed(0)} GB (one sequence · full recompute · ZeRO-3) exceeds the usable ${memory.usableHbmGB.toFixed(0)} GB HBM — raise TP/PP/CP.`), ...memFields, memoryInfeasible: true };
   const notes: string[] = [];
   const notesEn: string[] = [];
   const note = (ko: string, en: string) => {
@@ -129,7 +136,7 @@ export function simulateTraining(w: WorkloadBlueprint, env: WorkloadEnv): Worklo
   const cpDeg = Math.max(1, Math.round(t.cp ?? 1));
   const tpp = Math.max(1, t.tp * t.pp * (tr ? cpDeg : 1));
   const gpus = Math.floor((clamp(w.gpuShare, 0, 1) * env.clusterGpus) / tpp) * tpp;
-  if (gpus < tpp) return empty(w, `GPU ${Math.floor(w.gpuShare * env.clusterGpus)}개로는 TP×PP=${tpp} 모델 병렬 그룹을 구성할 수 없습니다.`, `${Math.floor(w.gpuShare * env.clusterGpus)} GPUs cannot form a TP×PP=${tpp} model-parallel group.`);
+  if (gpus < tpp) return { ...empty(w, `GPU ${Math.floor(w.gpuShare * env.clusterGpus)}개로는 TP×PP=${tpp} 모델 병렬 그룹을 구성할 수 없습니다.`, `${Math.floor(w.gpuShare * env.clusterGpus)} GPUs cannot form a TP×PP=${tpp} model-parallel group.`), ...memFields };
   const dp = gpus / tpp;
   const prec = PRECISION[t.precision] ?? 1;
   const nActive = w.model.activeParamsB * 1e9;
@@ -171,6 +178,7 @@ export function simulateTraining(w: WorkloadBlueprint, env: WorkloadEnv): Worklo
   const tokensPerSec = tokensStep / stepTime;
   const mfu = tr && tr.mfuEffective !== undefined ? tr.mfuEffective : (6 * nActive * tokensPerSec) / (gpus * c.gpuFlopsPeak);
   if (tr) note(`스텝 시간 ${stepTime.toFixed(2)} s = 연산 ${computeTimeEff.toFixed(2)} s + 노출 통신 ${commTime.toFixed(2)} s (트래픽 엔진, 통신 총 ${commTotal.toFixed(2)} s 중 겹침 제외) · MFU ${(mfu * 100).toFixed(1)} % (유도값).`, `Step time ${stepTime.toFixed(2)} s = compute ${computeTimeEff.toFixed(2)} s + exposed communication ${commTime.toFixed(2)} s (traffic engine; ${commTotal.toFixed(2)} s total communication before overlap) · MFU ${(mfu * 100).toFixed(1)} % (derived).`);
+  if (memory && !memory.fits) note(`GPU당 메모리 ${memory.totalGBPerGpu.toFixed(0)} GB가 가용 HBM ${memory.usableHbmGB.toFixed(0)} GB(물리 ${memory.gpuMemoryGB} GB, 예비 ${Math.round(memory.reserveBand[1] * 100)} %)를 넘습니다 — 스텝 모델은 계산했지만 이 구성은 그대로 실행되지 않습니다.`, `Per-GPU memory ${memory.totalGBPerGpu.toFixed(0)} GB exceeds the usable ${memory.usableHbmGB.toFixed(0)} GB HBM (${memory.gpuMemoryGB} GB physical, ${Math.round(memory.reserveBand[1] * 100)} % reserve) — the step model is computed, but this configuration will not run as is.`);
   if (t.tp > c.scaleUp.domainSize) note(`TP=${t.tp}가 scale-up 도메인(${c.scaleUp.domainSize})을 초과해 텐서 병렬 통신이 scale-out 네트워크로 흐릅니다.`, `TP=${t.tp} exceeds the scale-up domain (${c.scaleUp.domainSize}) — tensor-parallel traffic uses the scale-out network.`);
   if (tpp > c.scaleUp.domainSize) note(`TP×PP=${tpp}가 scale-up 도메인을 넘어 파이프라인 통신이 scale-out을 사용합니다.`, `TP×PP=${tpp} exceeds the scale-up domain — pipeline traffic uses the scale-out network.`);
 
@@ -244,6 +252,8 @@ export function simulateTraining(w: WorkloadBlueprint, env: WorkloadEnv): Worklo
     notes,
     notesEn,
     details: { dp, microBatches: micro, bubble, tpCommS: tpTime, ppCommS: ppTime, dpCommS: dpTime, epCommS: epTime, congestionFactor: congestion, clusterMtbfH: mtbfS / 3600, dalyOptimalMin: daly / 60, racks, commTotalS: commTotal, stepModel: tr ? 'traffic-v2' : 'v1' },
+    ...memFields,
+    ...(memory ? { memoryOverBudget: !memory.fits } : {}),
   };
 }
 
