@@ -243,6 +243,63 @@ function physicalEnvelope(gpu: TrafficGpu, suCap: number, nicCap: number): Traff
   };
 }
 
+// ───────────── compute-path efficiency (training-roofline-model, 2026-09-19) ─────────────
+//
+// The compute term used to divide by MFU_DEFAULT — an END-TO-END MFU (Llama 3 Tab. 4's 43 %) that already contains
+// exposed communication and the pipeline bubble — and then add exposed scale-out communication on top: a double count,
+// and a divisor with no place for the parallel topology. No compute-only MFU exists publicly (a 118-row survey of
+// MLPerf / NVIDIA / frontier-lab / operator evidence found none), so η_k is a compute-path efficiency BACK-SOLVED through
+// this model: fitted on the only fixed-model / fixed-scale TP×PP sweep with step times (Hagemann et al., arXiv 2311.05610,
+// A100; hold-out RMS 3.8 %) and inverted from Llama 3 Table 4 for H100 after removing the model's own bubble, shard
+// factor and exposed TP all-reduce. Provenance is therefore 'derived' or 'estimate' — never 'public-spec'.
+export interface ComputeEfficiency { value: number; lo: number; hi: number; sourceType: EvidenceSourceType; citation: string }
+export type AcceleratorClass = 'a100' | 'h100' | 'b200' | 'b300' | 'cdna' | 'unknown';
+export const COMPUTE_EFFICIENCY_BF16: Record<AcceleratorClass, ComputeEfficiency> = {
+  a100: { value: 0.63, lo: 0.57, hi: 0.70, sourceType: 'derived', citation: 'Fitted on Hagemann et al. (arXiv 2311.05610) Llama 13B / 30B / 65B TP×PP sweeps, A100 312 TFLOP/s dense; 65B hold-out RMS 3.8 %' },
+  h100: { value: 0.58, lo: 0.53, hi: 0.68, sourceType: 'derived', citation: 'Back-solved from Llama 3 405B Table 4 (430 TFLOP/s, TP8 / PP16 / DP64, interleaved v ≈ 8) after removing the modelled bubble, κ_tp(8) and exposed TP all-reduce; Nemotron-4 340B gives 0.55–0.62' },
+  b200: { value: 0.48, lo: 0.44, hi: 0.52, sourceType: 'derived', citation: 'NVIDIA NVFP4 pre-training blog Table 2: Llama 3 8B BF16 1,165 TFLOP/s on GB200 = 47.6 % of 2,450 dense, communication-light single node' },
+  b300: { value: 0.48, lo: 0.38, hi: 0.58, sourceType: 'estimate', citation: 'No public compute-path anchor — the B200 value with a ±0.10 band' },
+  cdna: { value: 0.50, lo: 0.35, hi: 0.65, sourceType: 'estimate', citation: 'No public LLM pre-training step data for CDNA in the survey — ±0.15 band ("no anchor")' },
+  unknown: { value: 0.50, lo: 0.35, hi: 0.65, sourceType: 'estimate', citation: 'Unrecognised accelerator — band centre only' },
+};
+/** Accelerator class from the declared name. Vendor-neutral: the class only selects a fitted band, no engine rule keys on it. */
+export function acceleratorClassOf(name?: string): AcceleratorClass {
+  const n = (name ?? '').toLowerCase();
+  if (/\bmi[3-4]\d\d/.test(n) || n.includes('instinct') || n.includes('cdna')) return 'cdna';
+  if (n.includes('b300') || n.includes('gb300')) return 'b300';
+  if (n.includes('b200') || n.includes('gb200')) return 'b200';
+  if (/h100|h200|h800/.test(n)) return 'h100';
+  if (n.includes('a100')) return 'a100';
+  return 'unknown';
+}
+/** GEMM share of step FLOPs for the precision split: ≈ 0.48 at 8B (NVIDIA precision ladder), ≈ 0.9 at 405B (Azure step profile); log-interpolated (estimate). */
+export function gemmShareFor(nActive: number): number {
+  const x = Math.log10(Math.max(1e9, nActive) / 8e9) / Math.log10(405 / 8);
+  return clamp(0.48 + 0.42 * x, 0.4, 0.95);
+}
+/**
+ * Amdahl factor for a non-BF16 precision, against T_ideal at the TRAINING precision: only the GEMM share g runs at the
+ * precision peak; attention softmax, norms and memory-bound ops stay at BF16 speed → factor = g + (1 − g) · peak_p / peak_bf16.
+ * The peak ratio defaults to the standard 2× (FP8) / 4× (FP4) dense ratios when the envelope does not supply one.
+ */
+export function precisionAmdahlFactor(precision: string, nActive: number, peakRatio?: number): number {
+  const r = peakRatio ?? (precision === 'fp8' ? 2 : precision === 'fp4' ? 4 : 1);
+  const g = gemmShareFor(nActive);
+  return g + (1 - g) * r;
+}
+/** κ_tp = 1 + a · log2(t) · clamp(t · 2048 / h, 0.25, 4); a = 0.045 [0.02, 0.07] derived (Hagemann 65B PP4 TP2→4→8 +9 % / +29 %; Meta ISCA'25 TP8→4 ≈ 10 %). No public support for t > 8 or t crossing the node — flagged extrapolation. */
+export const TP_SHARD_SLOPE = { value: 0.045, lo: 0.02, hi: 0.07 };
+export function tpShardFactor(tp: number, hidden: number): number {
+  if (tp <= 1) return 1;
+  return 1 + TP_SHARD_SLOPE.value * Math.log2(tp) * clamp((tp * 2048) / Math.max(1, hidden), 0.25, 4);
+}
+/** β by schedule: 1F1B (p−1)/m + 0.02 residual (ZB Tab. 5 after the model's own p2p); interleaved (p−1)/(v·m); DualPipe ≈ 0. Validated: ISCA 5 % at batch = 2p / 12 % at batch = p with v = 8. */
+export function pipelineBubble(pp: number, m: number, schedule: '1f1b' | 'interleaved' | 'dualpipe', v: number): number {
+  if (pp <= 1 || schedule === 'dualpipe') return 0;
+  const vv = schedule === 'interleaved' ? Math.max(1, v) : 1;
+  return clamp((pp - 1) / (vv * Math.max(1, m)) + (schedule === '1f1b' ? 0.02 : 0), 0, 0.95);
+}
+
 interface GroupBytes {
   total: number;
   byTier: Record<Tier, number>;
@@ -250,7 +307,11 @@ interface GroupBytes {
   timeS: number;
   /** scale-out (NIC) part of timeS */
   nicS: number;
+  /** scale-up part of timeS — exposable now that the compute divisor holds no communication */
+  suS: number;
   exposedS: number;
+  hiddenS: number;
+  state: 'hidden' | 'overlap-limited' | 'comm-bound' | 'critical-path';
   crossesMultipath: boolean;
   tier: string;
   f: number;
@@ -285,18 +346,29 @@ export function computeTraffic(spec: TrafficSpec): TrafficReport {
   const recompute = !!t.activationRecompute;
   const flopsPerToken = recompute ? 8 * nActive + 16 * L * h * s : 6 * nActive + 12 * L * h * s;
   const flopsStep = tokensStep * flopsPerToken;
-  const mfuDef = MFU_DEFAULT[t.precision] ?? MFU_DEFAULT.bf16;
-  const mfu = t.mfuAssumed && t.mfuAssumed > 0 ? clamp(t.mfuAssumed, 0.05, 1) : mfuDef.value;
-  const tComp = flopsStep / (gpus * gpu.peakFlops * mfu);
-  const bubble = pp > 1 ? (pp - 1) / m : 0;
+  // ── compute path: T_comp = T_ideal · amdahl(precision) / η_k · κ_tp(t) · (1 + β) — see COMPUTE_EFFICIENCY_BF16 ──
+  const tIdealS = flopsStep / (gpus * gpu.peakFlops);
+  const accClass = acceleratorClassOf(gpu.acceleratorName ?? gpu.platformName);
+  const etaTable = COMPUTE_EFFICIENCY_BF16[accClass];
+  const amdahl = precisionAmdahlFactor(t.precision, nActive);
+  const kappaTp = tpShardFactor(tp, h);
+  // schedule from the framework mode the blueprint already carries; v defaults to a vendor-recipe interleave depth
+  const frameworkMode = spec.overlapFramework ?? 'fsdp-prefetch';
+  const schedule: '1f1b' | 'interleaved' | 'dualpipe' = frameworkMode === 'dualpipe' ? 'dualpipe' : frameworkMode === 'megatron-no-overlap' ? '1f1b' : 'interleaved';
+  const vStages = schedule === 'interleaved' ? clamp(Math.round(lStage / 4), 2, 8) : 1;
+  const bubble = pipelineBubble(pp, m, schedule, vStages);
+  const compFor = (eta: number) => ((tIdealS * amdahl) / Math.max(0.05, eta)) * kappaTp;
+  let etaK = etaTable.value;
+  let tComp = compFor(etaK) * (1 + bubble); // provisional; re-evaluated (and η_k inverted) once every group exists
 
   // ── bytes per GPU per step ──
-  const tpBytes = tp > 1 ? m * lStage * 8 * b * s * h * ((tp - 1) / tp) * B_ACT : 0;
+  // per-GPU activations are b·s/c tokens under context parallelism, so TP and PP bytes divide by c; CP's K/V gather divides by t (KV heads are TP-sharded)
+  const tpBytes = tp > 1 ? (m * lStage * 8 * b * s * h * ((tp - 1) / tp) * B_ACT) / cp : 0;
   // long-context KV (r2-models.md §2): sliding-window layers hold at most `attentionWindow` tokens of KV; one layer in
   // `globalLayerInterval` attends globally (Gemma 3 5 local : 1 global → 6, gpt-oss alternating → 2). No window → every layer global.
   const kvSeq = kvSeqEffective(s, model.attentionWindow, model.globalLayerInterval);
-  const cpBytes = cp > 1 ? 3 * m * lStage * 2 * b * kvSeq * nKv * dHead * B_ACT * ((cp - 1) / cp) : 0;
-  const ppBytes = pp > 1 ? (2 * m * b * s * h * B_ACT) / tp : 0;
+  const cpBytes = cp > 1 ? (3 * m * lStage * 2 * b * kvSeq * nKv * dHead * B_ACT * ((cp - 1) / cp)) / tp : 0;
+  const ppBytes = pp > 1 ? (2 * m * b * s * h * B_ACT) / (tp * cp) : 0;
   const psi = nTotal / (tp * pp * (model.moe ? ep : 1));
   const stage = t.zeroStage ?? 1;
   const dpBytes = dp > 1 ? (stage >= 3 ? (2 * B_W + B_G) * psi : 2 * B_G * psi) * ((dp - 1) / dp) : 0;
@@ -336,7 +408,8 @@ export function computeTraffic(spec: TrafficSpec): TrafficReport {
     const user = spec.overlap?.[g];
     return user != null && Number.isFinite(user) ? clamp(user, 0, 1) : odef[g].f;
   };
-  const windowOf = (g: Group) => (g === 'dp' ? (recompute ? 0.75 : 2 / 3) * tComp : tComp);
+  // window as a share of the compute path (DP hides behind the backward pass only); applied in evaluate() below
+  const windowShare = (g: Group) => (g === 'dp' ? (recompute ? 0.75 : 2 / 3) : 1);
 
   const nicTime = (byTier: Record<Tier, number>, etaG: number, ring: boolean): number => {
     // slowest tier wins: leaf link at busbw; spine/core links see the oversubscription and the load-balancing efficiency
@@ -359,10 +432,9 @@ export function computeTraffic(spec: TrafficSpec): TrafficReport {
     const suS = byTier['scale-up'] / suCap;
     const nicS = nicTime(byTier, etaOf(g), g !== 'ep');
     const f = fOf(g);
-    const windowS = windowOf(g);
-    const exposedS = Math.max(0, nicS - Math.min(f * nicS, windowS));
     const crossesMultipath = (hasSpine && byTier.spine > 0) || (hasCore && byTier.core > 0);
-    const gb: GroupBytes = { total, byTier, timeS: suS + nicS, nicS, exposedS, crossesMultipath, tier, f, windowS };
+    // exposure is evaluated once every group exists (shared overlap budget) — see evaluate() in the step section
+    const gb: GroupBytes = { total, byTier, timeS: suS + nicS, suS, nicS, exposedS: 0, hiddenS: 0, state: 'hidden', crossesMultipath, tier, f, windowS: 0 };
     groups[g] = gb;
     return gb;
   };
@@ -439,13 +511,63 @@ export function computeTraffic(spec: TrafficSpec): TrafficReport {
     mk('ep', epBytesFull, bt, epBytesFull === 0 ? '-' : epInDomain ? 'scale-up' : bt.spine > 0 ? 'leaf+spine' : 'leaf');
   }
 
-  // ── step time, MFU ──
+  // ── step time: shared overlap budget, then the optional inversion of an end-to-end calibration ──
   const G = Object.keys(groups) as Group[];
-  const exposed = G.reduce((sum, g) => sum + groups[g].exposedS, 0);
+  // Scale-up AND scale-out time of every group is exposable now that the divisor holds no communication. A group hides
+  // at most f_g·T_g inside its own window, and all groups share ONE compute window (DP its 2/3 slice):
+  // exposed = Σ (T_g − hidden_g) + max(0, Σ hidden_g − W_shared). The bubble also idles the per-micro-batch TP / CP
+  // collectives, so (1 + β) multiplies compute plus those two exposures; DP / PP / EP exposure sits outside the pipeline.
+  const evaluate = (eta: number) => {
+    const comp = compFor(eta);
+    const hidden: Partial<Record<Group, number>> = {};
+    let requested = 0;
+    for (const g of G) {
+      const hid = Math.min(groups[g].f * groups[g].timeS, windowShare(g) * comp);
+      hidden[g] = hid;
+      requested += hid;
+    }
+    const scale = requested > comp ? comp / requested : 1;
+    const exposedBy: Partial<Record<Group, number>> = {};
+    let inPipe = 0;
+    let outside = 0;
+    for (const g of G) {
+      const e = Math.max(0, groups[g].timeS - (hidden[g] ?? 0) * scale);
+      exposedBy[g] = e;
+      if (g === 'tp' || g === 'cp') inPipe += e; else outside += e;
+    }
+    return { comp, hidden, scale, exposedBy, exposed: inPipe + outside, step: (comp + inPipe) * (1 + bubble) + outside };
+  };
+  // training.mfuAssumed is an END-TO-END target (paper / MLPerf MFUs are wall clock): invert for η_k with the very model
+  // that will predict the exposure, so calibration and prediction can never disagree by the communication terms.
+  let calibrated = false;
+  if (t.mfuAssumed && t.mfuAssumed > 0) {
+    const target = clamp(t.mfuAssumed, 0.02, 0.99);
+    let lo = 0.05;
+    let hi = 1;
+    for (let i = 0; i < 48; i++) {
+      const mid = (lo + hi) / 2;
+      if (tIdealS / evaluate(mid).step < target) lo = mid; else hi = mid;
+    }
+    etaK = (lo + hi) / 2;
+    calibrated = true;
+  }
+  const ev = evaluate(etaK);
+  tComp = ev.comp * (1 + bubble);
+  for (const g of G) {
+    const gb = groups[g];
+    gb.windowS = windowShare(g) * ev.comp;
+    gb.hiddenS = (ev.hidden[g] ?? 0) * ev.scale;
+    gb.exposedS = ev.exposedBy[g] ?? 0;
+    const rho = gb.windowS > 0 ? gb.timeS / gb.windowS : Number.POSITIVE_INFINITY;
+    gb.state = gb.timeS <= 0 ? 'hidden' : gb.f <= 0 ? 'critical-path' : gb.f * rho > 1 ? 'comm-bound' : gb.exposedS / Math.max(1e-9, ev.step) < 0.01 ? 'hidden' : 'overlap-limited';
+  }
+  const exposed = ev.exposed;
   const commTime = G.reduce((sum, g) => sum + groups[g].timeS, 0);
   const nicCommTime = G.reduce((sum, g) => sum + groups[g].nicS, 0);
-  const stepTime = tComp + exposed;
-  const mfuEff = flopsStep / (gpus * gpu.peakFlops * stepTime);
+  const suCommTime = G.reduce((sum, g) => sum + groups[g].suS, 0);
+  const stepTime = ev.step;
+  const mfuEff = tIdealS / stepTime;
+  const bindingGroup = G.filter((g) => groups[g].exposedS > 0).sort((a, b2) => groups[b2].exposedS - groups[a].exposedS)[0];
 
   // ── per-tier utilization (burst window) and headroom ──
   const tierBytes = zero();
@@ -557,19 +679,19 @@ export function computeTraffic(spec: TrafficSpec): TrafficReport {
   }
 
   // ── notes ──
-  const overlapTxt = G.filter((g) => groups[g].nicS > 0).map((g) => `${g.toUpperCase()} f ${groups[g].f.toFixed(3)} (${spec.overlap?.[g] != null ? 'user' : odef[g].sourceType})`).join(' · ');
+  const overlapTxt = G.filter((g) => groups[g].timeS > 0).map((g) => `${g.toUpperCase()} f ${groups[g].f.toFixed(3)} (${spec.overlap?.[g] != null ? 'user' : odef[g].sourceType}, ${groups[g].state})`).join(' · ');
   notes.unshift(
-    `Compute ${recompute ? '8·N_active + 16·L·h·s (activation recompute, Megatron 96-form)' : '6·N_active + 12·L·h·s (PaLM App. B)'} = ${(flopsStep / 1e18).toFixed(2)} EFLOP/step; MFU ${(mfu * 100).toFixed(0)} % (${t.mfuAssumed ? 'user' : `${mfuDef.source}: ${mfuDef.citation}`}) → T_comp ${tComp.toFixed(2)} s (end-to-end MFU anchor: scale-up collectives are inside it).`,
-    `Parallelism TP${tp}·CP${cp}·PP${pp} = ${tpp} GPUs per replica, DP ${dp}${moe ? `, EP ${ep}` : ''}; micro-batches ${m} × ${b} seq; pipeline bubble (p−1)/m = ${(bubble * 100).toFixed(0)} % (inside the assumed MFU).`,
+    `Compute ${recompute ? '8·N_active + 16·L·h·s (activation recompute, Megatron 96-form)' : '6·N_active + 12·L·h·s (PaLM App. B)'} = ${(flopsStep / 1e18).toFixed(2)} EFLOP/step; T_ideal ${tIdealS.toFixed(2)} s → T_comp ${tComp.toFixed(2)} s = T_ideal × amdahl ${amdahl.toFixed(2)} ÷ η_k ${etaK.toFixed(3)} (${calibrated ? 'inverted from the end-to-end calibration' : `${accClass} ${etaTable.sourceType}, band ${etaTable.lo}–${etaTable.hi}`}) × κ_tp ${kappaTp.toFixed(3)} × (1 + β ${(bubble * 100).toFixed(1)} %). Predicted end-to-end MFU ${(mfuEff * 100).toFixed(1)} %.`,
+    `Parallelism TP${tp}·CP${cp}·PP${pp} = ${tpp} GPUs per replica, DP ${dp}${moe ? `, EP ${ep}` : ''}; micro-batches ${m} × ${b} seq; schedule ${schedule}${schedule === 'interleaved' ? ` (v = ${vStages})` : ''} → bubble ${(bubble * 100).toFixed(1)} % applied to the step${bindingGroup ? `; binding group ${bindingGroup.toUpperCase()} (${groups[bindingGroup].state})` : ''}.`,
     `Group placement — TP: ${groups.tp.tier}, CP: ${groups.cp.tier}, PP: ${groups.pp.tier}, DP: ${groups.dp.tier} (members per NVLink domain ${mU}, per pod ${mL}, per spine domain ${mS})${moe ? `, EP: ${groups.ep.tier}` : ''}.`,
     `η_fabric = ${eta} on spine/core tiers (${fabric.eta.class}; ${fabric.eta.citation})${etaA2a !== eta ? `; η_A2A = ${etaA2a.toFixed(3)} for expert all-to-all (measured alltoall)` : ''}; η_host (NIC busbw) = ${nicBusbw}.${fabric.sharp ? ' SHARP in-network reduction halves DP bytes on the NIC tiers (IB).' : ''}`,
-    `Overlap: exposed = T_nic − min(f·T_nic, W), framework mode ${mode}${overlapTxt ? ` — ${overlapTxt}` : ''}.`,
+    `Overlap: exposed = Σ_g (T_g − min(f_g·T_g, W_g)) + max(0, Σ hidden − W_shared), scale-up and scale-out both exposable; framework mode ${mode}${overlapTxt ? ` — ${overlapTxt}` : ''}.`,
   );
   if (exposed > 0) notes.push(`Exposed communication ${exposed.toFixed(3)} s of ${stepTime.toFixed(2)} s per step (${((exposed / stepTime) * 100).toFixed(2)} %) — scale-out collective time before overlap ${nicCommTime.toFixed(3)} s.`);
   if (worst > 1) notes.push(`Tier over capacity in its burst window (×${worst.toFixed(2)}) — collectives are throttled; effective efficiency ×${congestion.toFixed(2)}.`);
 
   const overlap = Object.fromEntries(
-    G.map((g) => [g, { f: groups[g].f, windowS: groups[g].windowS, nicCommS: groups[g].nicS, exposedS: groups[g].exposedS, sourceType: spec.overlap?.[g] != null ? 'user' : odef[g].sourceType, citation: spec.overlap?.[g] != null ? 'User-entered overlap fraction' : odef[g].citation, ...(odef[g].url ? { url: odef[g].url } : {}), ...(odef[g].measureIt ? { measureIt: true } : {}) }]),
+    G.map((g) => [g, { f: groups[g].f, windowS: groups[g].windowS, nicCommS: groups[g].nicS, exposedS: groups[g].exposedS, suCommS: groups[g].suS, commS: groups[g].timeS, hiddenS: groups[g].hiddenS, state: groups[g].state, sourceType: spec.overlap?.[g] != null ? 'user' : odef[g].sourceType, citation: spec.overlap?.[g] != null ? 'User-entered overlap fraction' : odef[g].citation, ...(odef[g].url ? { url: odef[g].url } : {}), ...(odef[g].measureIt ? { measureIt: true } : {}) }]),
   ) as NonNullable<TrafficReport['overlap']>;
 
   return {
@@ -585,6 +707,20 @@ export function computeTraffic(spec: TrafficSpec): TrafficReport {
     eta: fabric.eta,
     computeTimeS: tComp,
     exposedCommS: exposed,
+    computeIdealS: tIdealS,
+    computeEfficiency: {
+      value: etaK,
+      lo: calibrated ? etaK : etaTable.lo,
+      hi: calibrated ? etaK : etaTable.hi,
+      accelerator: accClass,
+      sourceType: calibrated ? 'user-measured' : etaTable.sourceType,
+      citation: calibrated ? `Inverted from training.mfuAssumed ${t.mfuAssumed} (an end-to-end figure) through this model, so its exposed communication is removed by the same terms that predict it` : etaTable.citation,
+      calibrated,
+    },
+    pipelineBubble: bubble,
+    tpShardFactor: kappaTp,
+    suCommTimeS: suCommTime,
+    ...(bindingGroup ? { bindingGroup } : {}),
     commTimeS: commTime,
     nicCommTimeS: nicCommTime,
     mfuEffective: mfuEff,

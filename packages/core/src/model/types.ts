@@ -1577,13 +1577,32 @@ export interface TrafficReport {
   /** v2 2차 (T2): scale-out (NIC) part of commTimeS — the part the overlap formula exposes */
   nicCommTimeS?: number;
   /** v2 2차 (T2): per-group overlap: exposed = T_nic − min(f·T_nic, W) (r2-eta.md §5.2) */
-  overlap?: Record<'tp' | 'cp' | 'pp' | 'dp' | 'ep', { f: number; windowS: number; nicCommS: number; exposedS: number; sourceType: EvidenceSourceType | 'user'; citation: string; url?: string; measureIt?: boolean }>;
+  overlap?: Record<'tp' | 'cp' | 'pp' | 'dp' | 'ep', {
+    f: number; windowS: number; nicCommS: number; exposedS: number; sourceType: EvidenceSourceType | 'user'; citation: string; url?: string; measureIt?: boolean;
+    /** training-roofline-model: scale-up part of the group's communication time (now exposable) and the total before overlap */
+    suCommS?: number; commS?: number; hiddenS?: number;
+    /** compute-vs-communication balance of this group: f = 0 → critical-path; window saturated → comm-bound; else overlap-limited / hidden */
+    state?: 'hidden' | 'overlap-limited' | 'comm-bound' | 'critical-path';
+  }>;
   overlapFramework?: 'megatron-no-overlap' | 'fsdp-prefetch' | 'megascale-overlap' | 'dualpipe';
   /** v2 2차 (T2): NIC busbw factor η_host used */
   etaHost?: number;
   /** v2 2차 (T2): η used for expert-parallel all-to-all when it differs from η_fabric */
   etaA2a?: number;
   mfuEffective?: number;
+  // ── training-roofline-model (2026-09-19): the compute path is a prediction, end-to-end MFU is its OUTPUT ──
+  /** FLOP_step ÷ (GPUs · declared dense peak) — the ideal compute time before any efficiency term */
+  computeIdealS?: number;
+  /** compute-path efficiency η_k in use, its band and provenance ('user-measured' when inverted from training.mfuAssumed) */
+  computeEfficiency?: { value: number; lo: number; hi: number; accelerator: string; sourceType: EvidenceSourceType | 'user-measured'; citation: string; calibrated: boolean };
+  /** pipeline bubble β actually applied to the step (schedule-aware; was note-only before) */
+  pipelineBubble?: number;
+  /** tensor-parallel shard-efficiency factor κ_tp applied to compute */
+  tpShardFactor?: number;
+  /** scale-up (NVLink / xGMI) part of commTimeS — exposable since the divisor holds no communication */
+  suCommTimeS?: number;
+  /** the parallel group with the largest exposed time — what this topology is bound on */
+  bindingGroup?: 'tp' | 'cp' | 'pp' | 'dp' | 'ep';
   /** placement of each parallel group: which tier its collectives run on */
   groupTier?: { tp: string; cp: string; pp: string; dp: string; ep: string; pd?: string };
   /** inference traffic block (KV bytes/token, P/D KV transfer, EP all-to-all decode bound and stage topology) */

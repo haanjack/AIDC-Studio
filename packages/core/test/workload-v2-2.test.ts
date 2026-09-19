@@ -248,8 +248,12 @@ describe('benchmark calibration', () => {
     const a = analyzeProject({ ...project, workloads: [w] });
     const tr = a.network.traffic!;
     expect(a.workloads[0].gpus).toBe(512);
-    const tokens = (w.training!.globalBatchTokensM * 1e6) / tr.computeTimeS!;
-    expect(Math.abs(tokens / r.sourceTokensPerSec! - 1)).toBeLessThan(0.01);
+    // The benchmark figure is end-to-end, so it is reproduced by the STEP time: mfuAssumed is inverted for the
+    // compute-path efficiency through the same model that predicts the exposed communication (no double count).
+    const tokens = (w.training!.globalBatchTokensM * 1e6) / tr.stepTimeS;
+    expect(Math.abs(tokens / r.sourceTokensPerSec! - 1)).toBeLessThan(1e-4);
+    expect(tr.computeEfficiency?.calibrated).toBe(true);
+    expect(tr.computeEfficiency?.sourceType).toBe('user-measured');
   });
 
   it('MoE efficiency evidence: DeepSeek-V3 vs Llama 3.1 405B on GB300 512 GPUs ≈ 0.37', () => {

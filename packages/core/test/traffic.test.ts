@@ -43,7 +43,9 @@ describe('traffic.ts — Llama 3 405B on 8,192 H100 (TP8 / PP16 / DP64, 16 M-tok
   it('step time ≈ 12.5 s (±15 %) with ≤ 10 % exposed communication', () => {
     expect(r.stepTimeS).toBeGreaterThan(12.5 * 0.85);
     expect(r.stepTimeS).toBeLessThan(12.5 * 1.15);
-    expect((r.exposedCommS ?? 0) / r.stepTimeS).toBeLessThanOrEqual(0.1);
+    // ≤ 0.15, not ≤ 0.10: the compute divisor is a compute-path efficiency now, so the 1.3 s TP all-reduce on NVLink is
+    // exposed (f_tp = 0, ISCA'25 / MegaScale: TP is on the critical path) instead of being hidden inside an end-to-end MFU.
+    expect((r.exposedCommS ?? 0) / r.stepTimeS).toBeLessThanOrEqual(0.15);
     expect(r.mfuEffective!).toBeGreaterThan(0.39);
   });
 
@@ -77,7 +79,12 @@ describe('traffic.ts — Llama 3 405B on 8,192 H100 (TP8 / PP16 / DP64, 16 M-tok
 
   it('activation recompute switches to the Megatron 96-form (4/3 of the PaLM FLOPs)', () => {
     const rc = computeTraffic({ ...llama3, training: { ...llama3.training, activationRecompute: true } });
-    expect(rc.computeTimeS! / r.computeTimeS!).toBeCloseTo(4 / 3, 6);
+    // The pure FLOP ratio lives on computeIdealS. computeTimeS is the compute path under a FIXED end-to-end
+    // calibration (mfuAssumed 0.43 is inverted for η_k), so with 4/3 the FLOPs at the same end-to-end MFU the compute
+    // path must absorb the unchanged exposed communication and grows by more than 4/3.
+    expect(rc.computeIdealS! / r.computeIdealS!).toBeCloseTo(4 / 3, 6);
+    expect(rc.computeTimeS! / r.computeTimeS!).toBeGreaterThanOrEqual(4 / 3 - 1e-9);
+    expect(rc.mfuEffective!).toBeCloseTo(r.mfuEffective!, 6); // the calibration target is honoured in both cases
   });
 
   it('is deterministic', () => {
