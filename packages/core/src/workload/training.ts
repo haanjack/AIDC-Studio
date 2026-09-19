@@ -273,7 +273,8 @@ export function trainingMemoryEstimate(
     est.proposals.push({ change, patch, totalGBPerGpu: e.totalGBPerGpu, fits: e.fits, crossesScaleUp: e.crossesScaleUp, noteEn });
   };
   if (z < 3 && dp * d.cp > 1) push('zeroStage', { zeroStage: 3 }, d, 'Shard parameters, gradients and optimizer over the data-parallel peers (ZeRO-3 / FSDP).');
-  if (mode !== 'full') push('activationRecompute', { activationRecompute: true }, d, 'Recompute activations in the backward pass (keeps layer inputs only; costs ~33 % more FLOPs).');
+  if (mode === 'none') push('activationRecompute', { activationRecompute: true, activationRecomputeMode: 'selective' }, d, 'Selective (op-level) recompute: keep matmul outputs, recompute the cheap ops (~5 % more FLOPs).');
+  if (mode !== 'full') push('activationRecompute', { activationRecompute: true, activationRecomputeMode: 'full' }, d, 'Full recompute: keep layer inputs only (~33 % more FLOPs).');
   if (b > 1) push('microBatchSeqs', { microBatchSeqs: 1 }, d, 'One sequence per micro-batch.');
   const heads = Math.max(1, Math.round(w.model.numHeads ?? w.model.hiddenSize / 128));
   for (const tp of divisorsUpTo(heads, 8)) {
@@ -286,4 +287,11 @@ export function trainingMemoryEstimate(
   const nextCp = [2, 4, 8, 16].find((c) => c > d.cp && s % c === 0);
   if (nextCp) push('cp', { cp: nextCp }, { ...d, cp: nextCp }, `Next context-parallel degree: ${nextCp}.`);
   return est;
+}
+
+/** Memory-only knobs (ZeRO stage, recompute, micro-batch) that make the estimate fit, in proposal order — undefined when only a topology change can. */
+export function trainingMemoryFitPatch(est: TrainingMemoryEstimate | undefined): Partial<Training> | undefined {
+  if (!est || est.fits) return undefined;
+  const p = est.proposals.find((x) => x.fits && (x.change === 'zeroStage' || x.change === 'activationRecompute' || x.change === 'microBatchSeqs'));
+  return p?.patch;
 }

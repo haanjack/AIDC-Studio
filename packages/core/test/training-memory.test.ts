@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { applyModelPreset, findModelPreset, presetModelFields, trainingDataParallel, trainingMemoryEstimate, TRAINING_RESERVE_BAND, type WorkloadBlueprint } from '../src/index.ts';
+import { applyModelPreset, findModelPreset, presetModelFields, trainingDataParallel, trainingMemoryEstimate, trainingMemoryFitPatch, TRAINING_RESERVE_BAND, type WorkloadBlueprint } from '../src/index.ts';
 
 const GiB = 2 ** 30 / 1e9; // TorchTitan reports GiB; the estimate reports GB (1e9)
 
@@ -63,12 +63,18 @@ describe('training memory model (workload/training.ts)', () => {
     expect(e.fits).toBe(false);
     const order = ['zeroStage', 'activationRecompute', 'microBatchSeqs', 'tp', 'pp', 'cp'];
     const idx = e.proposals.map((p) => order.indexOf(p.change));
-    for (let i = 1; i < idx.length; i++) expect(idx[i]).toBeGreaterThan(idx[i - 1]);
+    for (let i = 1; i < idx.length; i++) expect(idx[i]).toBeGreaterThanOrEqual(idx[i - 1]);
     for (const p of e.proposals) {
       const re = trainingMemoryEstimate({ ...w, training: { ...w.training!, ...p.patch } }, { tp: p.patch.tp ?? 1, cp: p.patch.cp ?? 1, pp: p.patch.pp ?? 1, ep: 1 }, 288, 72, 64)!;
       expect(re.totalGBPerGpu).toBeCloseTo(p.totalGBPerGpu, 9);
     }
     expect(trainingMemoryEstimate(w, { tp: 1, cp: 1, pp: 1, ep: 1 }, 288, 72, 64)).toEqual(e); // deterministic
+    expect(trainingMemoryFitPatch(e)).toBeUndefined(); // 405B on one GPU: no memory-only knob can rescue it
+    // the neutral reference shape (TP8 · PP8 · ZeRO-1, 141 GB, 3072 GPUs, 16M-token batches) without recompute: selective recompute is the lightest knob that fits
+    const ref = withTraining(llama(405, 126, 16384, 128, 53248), { tp: 8, pp: 8, zeroStage: 1, activationRecompute: false, globalBatchTokensM: 16 });
+    const r = trainingMemoryEstimate(ref, { tp: 8, cp: 1, pp: 8, ep: 1 }, 141, 72, 3072)!;
+    expect(r.fits).toBe(false);
+    expect(trainingMemoryFitPatch(r)).toEqual({ activationRecompute: true, activationRecomputeMode: 'selective' });
   });
 
   it('presets plumb the FFN widths the activation term needs', () => {

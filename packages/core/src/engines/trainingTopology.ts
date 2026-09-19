@@ -17,7 +17,7 @@ import { buildContext } from './context.ts';
 import { analyzeNetworkCtx } from './network.ts';
 import { analyzePowerCtx } from './power.ts';
 import { analyzeTraffic } from './traffic.ts';
-import { trainingMemoryEstimate } from '../workload/training.ts';
+import { trainingMemoryEstimate, trainingMemoryFitPatch } from '../workload/training.ts';
 import { analysedBlueprint, jobClusterGpus, simulateTraining, workloadEnv } from './workload.ts';
 import type { TrainingTopologyPatch } from '../workload/apply.ts';
 
@@ -50,6 +50,11 @@ export interface TrainingTopologyCandidate {
   pipelineBubble?: number;
   bindingGroup?: string;
   stepModel: 'traffic-v2' | 'v1' | 'none';
+  /** memory-only knobs (ZeRO-3 · recompute · micro-batch 1) this candidate needed to fit — applied BEFORE the step model ran, so the ranking pays for them */
+  memoryPatch?: Partial<NonNullable<WorkloadBlueprint['training']>>;
+  /** per-GPU memory as ranked (with memoryPatch applied) */
+  memoryGBPerGpu?: number;
+  memoryFits?: boolean;
   /** selected.timeToTrainDays ÷ this candidate's — > 1 means faster than the configuration */
   speedupVsSelected?: number;
 }
@@ -142,13 +147,20 @@ export function analyzeTrainingWorkloadTopologies(project: Project, workload: Wo
     else if (dp < 1) reason = 'pool';
     // memory floor (one sequence · full recompute · ZeRO-3): a candidate that cannot load under ANY schedule is rejected before the
     // step model runs; a candidate that loads only after knobs change stays ranked — the result card shows the knobs
-    else { const mem = trainingMemoryEstimate({ ...analysed, training: { ...t, tp, cp, pp, ep } }, { tp, cp, pp, ep }, compute.gpuMemoryGB ?? 0, U, allocated, { noProposals: true }); if (mem && !mem.floorFits) reason = 'memory'; }
+    // memory: a candidate whose floor (one sequence · full recompute · ZeRO-3) does not fit is rejected; one that fits only after
+    // memory-only knobs (ZeRO-3 → recompute → micro-batch 1) is ranked WITH those knobs applied, so its step time pays for them
+    let memoryPatch: TrainingTopologyCandidate['memoryPatch'];
+    if (!reason) {
+      const mem = trainingMemoryEstimate({ ...analysed, training: { ...t, tp, cp, pp, ep } }, { tp, cp, pp, ep }, compute.gpuMemoryGB ?? 0, U, allocated);
+      if (mem && !mem.floorFits) reason = 'memory';
+      else if (mem && !mem.fits) { memoryPatch = trainingMemoryFitPatch(mem); if (!memoryPatch) reason = 'memory'; }
+    }
     if (reason) {
       candidates.push({ ...base, status: 'rejected', reason });
       continue;
     }
     // the real pipeline, exactly as the Workload panel's result card runs it
-    const candidate: WorkloadBlueprint = { ...analysed, training: { ...t, tp, cp, pp, ep } };
+    const candidate: WorkloadBlueprint = { ...analysed, training: { ...t, tp, cp, pp, ep, ...memoryPatch } };
     const traffic = analyzeTraffic({ project, workload: candidate, ctx, network });
     const candidateNetwork = traffic ? { ...network, analysis: { ...network.analysis, traffic } } : network;
     const a = simulateTraining(candidate, workloadEnv(ctx, candidateNetwork, power));
@@ -168,6 +180,9 @@ export function analyzeTrainingWorkloadTopologies(project: Project, workload: Wo
       pipelineBubble: traffic?.pipelineBubble,
       bindingGroup: traffic?.bindingGroup,
       stepModel,
+      memoryPatch,
+      memoryGBPerGpu: a.memory?.totalGBPerGpu,
+      memoryFits: a.memory ? a.memory.fits : undefined,
     });
   }
 
@@ -180,7 +195,7 @@ export function analyzeTrainingWorkloadTopologies(project: Project, workload: Wo
 
   const notes: string[] = [
     `Ranked by time-to-train on the placed ${compute.gpuModel} cluster (${allocated} GPUs allocated of ${clusterGpus}); every candidate ran analyzeTraffic + simulateTraining. Nothing was truncated: ${enumerated} enumerated = ${ranked.length} ranked + ${rejectedList.length} rejected.`,
-    'HBM floor checked per candidate (one sequence · full recompute · ZeRO-3); candidates that cannot load under any schedule are rejected with reason memory. Whether the configured batch / ZeRO stage fits is reported by simulateTraining (memoryOverBudget).',
+    'HBM checked per candidate: the floor (one sequence · full recompute · ZeRO-3) must fit or the candidate is rejected with reason memory; a candidate that fits only after ZeRO-3 / recompute / micro-batch 1 is ranked with those knobs applied (memoryPatch) so its step time pays for them.',
     `Evidence basis: the TP axis (1–8) is calibrated on Hagemann et al. (A100 TP×PP sweeps) and Meta ISCA'25; PP × micro-batch on ISCA and Zero Bubble bubble ratios; CP and EP rest on single published points (ISCA CP16 exposure, MoE Parallel Folding). TP above 8 and TP across the scale-up domain (${U}) are direction-only.`,
   ];
   if (selected && selected.status === 'rejected') notes.push(`The configured topology tp${cfg.tp}/cp${cfg.cp}/pp${cfg.pp}/ep${cfg.ep} is not legal on this cluster (${selected.reason}).`);
@@ -219,5 +234,6 @@ export function trainingCandidatePatch(report: TrainingTopologyReport, c: Traini
     cp: c.cp,
     pp: c.pp,
     ep: c.ep,
+    ...c.memoryPatch,
   };
 }

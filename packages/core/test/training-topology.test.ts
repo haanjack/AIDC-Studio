@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { analyzeTrainingWorkloadTopologies, createNvidiaReferenceProject } from '../src/index.ts';
+import { analyzeTrainingWorkloadTopologies, trainingCandidatePatch, createNvidiaReferenceProject } from '../src/index.ts';
 
 /**
  * Sweep guard. Before the compute path became topology-sensitive (engines/traffic.ts: η_k · κ_tp · (1 + β), scale-up
@@ -38,6 +38,9 @@ describe('training topology sweep on the placed cluster', () => {
     expect(report.ranked.every((c) => c.stepModel === 'traffic-v2')).toBe(true);
     // pool accounting: used + stranded = allocated, always
     for (const c of report.ranked) expect(c.usedGpus + c.strandedGpus).toBe(report.allocatedGpus);
+    // memory-honest ranking: every ranked row fits HBM as ranked (with its memoryPatch applied and costed); the adopt patch carries the knobs
+    for (const c of report.ranked) expect(c.memoryFits).toBe(true);
+    for (const c of report.ranked.filter((x) => x.memoryPatch)) expect(Object.keys(trainingCandidatePatch(report, c)).some((k) => k in c.memoryPatch!)).toBe(true);
   });
 
   it('explores real alternatives to the configured tensor-parallel degree', () => {

@@ -312,6 +312,10 @@ function InferenceWorkloadParetoCard({ report, t, onApply }: {
   );
 }
 
+function memoryPatchLabel(p: NonNullable<TrainingTopologyCandidate['memoryPatch']>, t: Translate): string {
+  return [p.zeroStage !== undefined ? `ZeRO-${p.zeroStage}` : '', p.activationRecompute ? t(`workload.memory.train.recompute.${p.activationRecomputeMode ?? 'full'}`) : '', p.microBatchSeqs !== undefined ? `${t('workload.f.microBatch')} ${p.microBatchSeqs}` : ''].filter(Boolean).join(' · ');
+}
+
 function TrainingMemoryCard({ m, infeasible, t, onPatch }: { m: TrainingMemoryEstimate; infeasible?: boolean; t: Translate; onPatch: (p: Partial<NonNullable<WorkloadBlueprint['training']>>) => void }) {
   const staticGB = m.weightsGBPerGpu + m.gradientsGBPerGpu + m.optimizerGBPerGpu;
   return (
@@ -329,7 +333,7 @@ function TrainingMemoryCard({ m, infeasible, t, onPatch }: { m: TrainingMemoryEs
           <span className="hint">{t('workload.memory.train.proposals')}</span>
           {m.proposals.map((p) => (
             <button key={p.change} className="btn sm" style={p.fits ? undefined : { opacity: 0.6 }} title={p.noteEn} onClick={() => onPatch(p.patch)}>
-              {t(`workload.memory.train.p.${p.change}`, { v: String(Object.values(p.patch)[0]) })} → {fmtMemoryGB(p.totalGBPerGpu)}{p.fits ? ' ✓' : ''}{p.crossesScaleUp ? ' ⚠' : ''}
+              {p.change === 'activationRecompute' ? t(`workload.memory.train.recompute.${p.patch.activationRecomputeMode ?? 'full'}`) : t(`workload.memory.train.p.${p.change}`, { v: String(Object.values(p.patch)[0]) })} → {fmtMemoryGB(p.totalGBPerGpu)}{p.fits ? ' ✓' : ''}{p.crossesScaleUp ? ' ⚠' : ''}
             </button>
           ))}
         </div>
@@ -357,7 +361,7 @@ function TrainingTopologyCard({ report, t, onApply }: { report: TrainingTopology
       <DataTable
         maxHeight={320}
         columns={[
-          { key: 't', header: t('workload.curve.col.topology'), render: (c: TrainingTopologyCandidate) => <span>{topo(c)}{c.selected ? ` · ${t('workload.pareto.selected')}` : ''}{c.extrapolated || c.crossesScaleUp ? ' · ⚠' : ''}{c.unevenStages ? ' · ≈' : ''}</span> },
+          { key: 't', header: t('workload.curve.col.topology'), render: (c: TrainingTopologyCandidate) => <span>{topo(c)}{c.selected ? ` · ${t('workload.pareto.selected')}` : ''}{c.extrapolated || c.crossesScaleUp ? ' · ⚠' : ''}{c.unevenStages ? ' · ≈' : ''}{c.memoryPatch ? <span className="hint" title={t('workload.trainSweep.memPatchTitle')}> · {t('workload.trainSweep.memPatch', { v: memoryPatchLabel(c.memoryPatch, t) })}</span> : null}</span> },
           { key: 'd', header: t('workload.res.ttt'), num: true, render: (c) => `${fmt1(c.timeToTrainDays!)} ${t('workload.u.days')}` },
           { key: 's', header: t('workload.res.step'), num: true, render: (c) => `${fmt2(c.stepTimeS!)} s` },
           { key: 'm', header: 'MFU', num: true, render: (c) => fmtPct(c.mfu, 1) },

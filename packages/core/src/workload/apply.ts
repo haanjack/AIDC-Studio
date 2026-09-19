@@ -54,6 +54,11 @@ export interface TrainingTopologyPatch {
   cp: number;
   pp: number;
   ep: number;
+  /** memory knobs the sweep applied to make the topology fit (workload/training.ts) — installed with the topology */
+  zeroStage?: 0 | 1 | 2 | 3;
+  activationRecompute?: boolean;
+  activationRecomputeMode?: 'selective' | 'full';
+  microBatchSeqs?: number;
 }
 
 export type WorkloadPatch = InferenceTopologyPatch | TrainingTopologyPatch;
@@ -101,6 +106,9 @@ export function workloadPatchChanges(ws: readonly WorkloadBlueprint[], patch: Wo
     const cur = { tp: tr.tp, cp: tr.cp ?? 1, pp: tr.pp, ep: tr.ep };
     const out: WorkloadPatchChange[] = [];
     for (const key of ['tp', 'cp', 'pp', 'ep'] as const) if (cur[key] !== patch[key]) out.push({ field: `training.${key}`, from: String(cur[key]), to: String(patch[key]) });
+    for (const key of ['zeroStage', 'activationRecompute', 'activationRecomputeMode', 'microBatchSeqs'] as const) {
+      if (patch[key] !== undefined && tr[key] !== patch[key]) out.push({ field: `training.${key}`, from: String(tr[key] ?? '–'), to: String(patch[key]) });
+    }
     return out;
   }
   const w = ws.find((x) => x.id === patch.workloadId);
@@ -124,7 +132,10 @@ export function workloadPatchChanges(ws: readonly WorkloadBlueprint[], patch: Wo
 
 /** Short human-readable summary of the topology a patch would install, for a button title or a toast. */
 export function workloadPatchLabel(patch: WorkloadPatch): string {
-  if (patch.kind === 'training-topology') return `TP${patch.tp}/CP${patch.cp}/PP${patch.pp}/EP${patch.ep}`;
+  if (patch.kind === 'training-topology') {
+    const knobs = [patch.zeroStage !== undefined ? `ZeRO-${patch.zeroStage}` : '', patch.activationRecompute ? `${patch.activationRecomputeMode ?? 'full'} recompute` : '', patch.microBatchSeqs !== undefined ? `mb ${patch.microBatchSeqs}` : ''].filter(Boolean);
+    return `TP${patch.tp}/CP${patch.cp}/PP${patch.pp}/EP${patch.ep}${knobs.length ? ` · ${knobs.join(' · ')}` : ''}`;
+  }
   return patch.disaggregated
     ? `P ${label(patch.prefill)} · D ${label(patch.decode)}`
     : label(patch.aggregated);
@@ -141,7 +152,12 @@ export function workloadPatchIsNoop(ws: readonly WorkloadBlueprint[], patch: Wor
 export function applyWorkloadPatch(ws: WorkloadBlueprint[], patch: WorkloadPatch): WorkloadBlueprint[] {
   if (patch.kind === 'training-topology') {
     if (workloadPatchIsNoop(ws, patch)) return ws;
-    return ws.map((w) => (w.id !== patch.workloadId || !w.training ? w : { ...w, training: { ...w.training, tp: patch.tp, cp: patch.cp, pp: patch.pp, ep: patch.ep } }));
+    const knobs: Partial<NonNullable<WorkloadBlueprint['training']>> = {};
+    if (patch.zeroStage !== undefined) knobs.zeroStage = patch.zeroStage;
+    if (patch.activationRecompute !== undefined) knobs.activationRecompute = patch.activationRecompute;
+    if (patch.activationRecomputeMode !== undefined) knobs.activationRecomputeMode = patch.activationRecomputeMode;
+    if (patch.microBatchSeqs !== undefined) knobs.microBatchSeqs = patch.microBatchSeqs;
+    return ws.map((w) => (w.id !== patch.workloadId || !w.training ? w : { ...w, training: { ...w.training, tp: patch.tp, cp: patch.cp, pp: patch.pp, ep: patch.ep, ...knobs } }));
   }
   const target = ws.find((x) => x.id === patch.workloadId);
   if (!target?.inference || workloadPatchIsNoop(ws, patch)) return ws;
