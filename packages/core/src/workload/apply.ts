@@ -18,7 +18,7 @@ import { normalizeInferenceParallelism } from './inference.ts';
 
 /** Where a proposed value came from, so the UI can badge an apply action with the product's evidence vocabulary. */
 export interface WorkloadPatchProvenance {
-  source: 'pareto-sweep' | 'memory-estimate' | 'engine-sizing' | 'inferencex-measured';
+  source: 'pareto-sweep' | 'memory-estimate' | 'engine-sizing' | 'inferencex-measured' | 'topology-sweep';
   /** evidence class of the proposal itself (not of the model it came from) */
   evidence: 'public-spec' | 'derived' | 'estimate';
   /** what the proposal was computed against, e.g. the accelerator and the allocated pool */
@@ -45,7 +45,18 @@ export interface InferenceTopologyPatch {
   tpotSloMs?: number;
 }
 
-export type WorkloadPatch = InferenceTopologyPatch;
+/** Adopt a training parallelism from the topology sweep. Writes tp / cp / pp / ep only — never mfuAssumed, never the calibration. */
+export interface TrainingTopologyPatch {
+  kind: 'training-topology';
+  workloadId: Id;
+  provenance: WorkloadPatchProvenance;
+  tp: number;
+  cp: number;
+  pp: number;
+  ep: number;
+}
+
+export type WorkloadPatch = InferenceTopologyPatch | TrainingTopologyPatch;
 
 /** One field the patch would change, for the confirm diff the UI shows before writing anything. */
 export interface WorkloadPatchChange {
@@ -84,6 +95,14 @@ function stageChanges(stage: string, current: InferenceParallelism | undefined, 
 
 /** Every field the patch would change on the target blueprint. Empty ⇒ applying it is a no-op. */
 export function workloadPatchChanges(ws: readonly WorkloadBlueprint[], patch: WorkloadPatch): WorkloadPatchChange[] {
+  if (patch.kind === 'training-topology') {
+    const tr = ws.find((x) => x.id === patch.workloadId)?.training;
+    if (!tr) return [];
+    const cur = { tp: tr.tp, cp: tr.cp ?? 1, pp: tr.pp, ep: tr.ep };
+    const out: WorkloadPatchChange[] = [];
+    for (const key of ['tp', 'cp', 'pp', 'ep'] as const) if (cur[key] !== patch[key]) out.push({ field: `training.${key}`, from: String(cur[key]), to: String(patch[key]) });
+    return out;
+  }
   const w = ws.find((x) => x.id === patch.workloadId);
   const inf = w?.inference;
   if (!w || !inf) return [];
@@ -105,6 +124,7 @@ export function workloadPatchChanges(ws: readonly WorkloadBlueprint[], patch: Wo
 
 /** Short human-readable summary of the topology a patch would install, for a button title or a toast. */
 export function workloadPatchLabel(patch: WorkloadPatch): string {
+  if (patch.kind === 'training-topology') return `TP${patch.tp}/CP${patch.cp}/PP${patch.pp}/EP${patch.ep}`;
   return patch.disaggregated
     ? `P ${label(patch.prefill)} · D ${label(patch.decode)}`
     : label(patch.aggregated);
@@ -119,6 +139,10 @@ export function workloadPatchIsNoop(ws: readonly WorkloadBlueprint[], patch: Wor
  * array is returned when nothing changes so a store update can skip a no-op edit.
  */
 export function applyWorkloadPatch(ws: WorkloadBlueprint[], patch: WorkloadPatch): WorkloadBlueprint[] {
+  if (patch.kind === 'training-topology') {
+    if (workloadPatchIsNoop(ws, patch)) return ws;
+    return ws.map((w) => (w.id !== patch.workloadId || !w.training ? w : { ...w, training: { ...w.training, tp: patch.tp, cp: patch.cp, pp: patch.pp, ep: patch.ep } }));
+  }
   const target = ws.find((x) => x.id === patch.workloadId);
   if (!target?.inference || workloadPatchIsNoop(ws, patch)) return ws;
   return ws.map((w) => {

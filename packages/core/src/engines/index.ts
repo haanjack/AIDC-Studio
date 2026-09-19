@@ -42,7 +42,7 @@ export { clearanceZones, findClearanceIntrusions, floorLoadKgPerM2 } from './spa
 export { airDeltaT, dryBulbFraction, wetBulbFraction } from './cooling.ts';
 export { simulateInference, simulateTraining, simulateWorkload, type WorkloadEnv } from './workload.ts';
 export { analyzeInferenceWorkloadPareto, paretoPointPatch, type InferenceWorkloadParetoPoint, type InferenceWorkloadParetoReport, type InferenceWorkloadParetoSeries } from './inferencePareto.ts';
-export { analyzeTrainingWorkloadTopologies, type TrainingTopologyCandidate, type TrainingTopologyReason, type TrainingTopologyReport } from './trainingTopology.ts';
+export { analyzeTrainingWorkloadTopologies, trainingCandidatePatch, type TrainingTopologyCandidate, type TrainingTopologyReason, type TrainingTopologyReport } from './trainingTopology.ts';
 // v2 contract exports
 export * from './radix.ts';
 export { analyzeInferenceTraffic, analyzeTraffic, type TrafficInput } from './traffic.ts';

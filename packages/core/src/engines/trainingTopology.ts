@@ -18,6 +18,7 @@ import { analyzeNetworkCtx } from './network.ts';
 import { analyzePowerCtx } from './power.ts';
 import { analyzeTraffic } from './traffic.ts';
 import { analysedBlueprint, jobClusterGpus, simulateTraining, workloadEnv } from './workload.ts';
+import type { TrainingTopologyPatch } from '../workload/apply.ts';
 
 export type TrainingTopologyReason = 'heads' | 'experts' | 'expert-placement' | 'pool' | 'engine';
 
@@ -197,5 +198,22 @@ export function analyzeTrainingWorkloadTopologies(project: Project, workload: Wo
     selected,
     spread,
     notes,
+  };
+}
+
+/** The patch that adopts a swept training topology with one click. Extrapolated or scale-up-crossing points are badged 'estimate'. */
+export function trainingCandidatePatch(report: TrainingTopologyReport, c: TrainingTopologyCandidate): TrainingTopologyPatch {
+  return {
+    kind: 'training-topology',
+    workloadId: report.workloadId,
+    provenance: {
+      source: 'topology-sweep',
+      evidence: c.extrapolated || c.crossesScaleUp ? 'estimate' : 'derived',
+      basis: `${report.accelerator} · ${report.allocatedGpus} GPU · ${c.stepModel}${report.memoryChecked ? '' : ' · HBM fit not checked'}`,
+    },
+    tp: c.tp,
+    cp: c.cp,
+    pp: c.pp,
+    ep: c.ep,
   };
 }

@@ -3,6 +3,7 @@ import {
   acceleratorPeakSource, analyzeInferenceWorkloadPareto, applyModelPreset, BENCHMARKS, calibrateFromBenchmark, calibrationRecord, catalogItems, REF_POD_TEMPLATE, effectiveShare, fitInferenceXRegression, INFERENCEX_MODELS,
   fillRemainder, findBenchmark, findCatalogItem, findModelPreset, INFERENCE_HBM_UTILIZATION, inferenceMemoryEstimate, inferenceParallelismFor, inferencePromptTokens, inferenceReplicaGpus, inferenceXModelName, inferenceXPerformanceCurves, inferenceXPredictionBenchmark, MFU_DEFAULT, MODEL_PRESETS, NODE_SPECS, normalizeShares, peakFlopsFor, podSizing, predictInferenceXPerformance, rankInferenceXBenchmarks, rankInferenceXCacheBenchmarks,
   applyWorkloadPatch, paretoPointPatch, presetModifiedFields, scaleWarning, shareState, takeShareDetailed, workloadPatchChanges,
+  analyzeTrainingWorkloadTopologies, trainingCandidatePatch, type TrainingTopologyCandidate, type TrainingTopologyReport,
   type BenchmarkRow, type CalibrationPrecision, type CalibrationWarning, type CatalogItem, type SizingSuggestion, type UserMeasurement,
   type InferenceMemoryEstimate, type InferenceParallelism, type InferenceWorkloadParetoPoint, type InferenceWorkloadParetoReport, type InferenceXCacheBenchmark, type InferenceXHardwarePrediction, type InferenceXPerformanceCurvePoint, type InferenceXPerformanceCurveReport, type InferenceXPredictionReport, type WorkloadAnalysis, type WorkloadBlueprint, type WorkloadKind,
 } from '@aidc/core';
@@ -311,6 +312,42 @@ function InferenceWorkloadParetoCard({ report, t, onApply }: {
   );
 }
 
+function TrainingTopologyCard({ report, t, onApply }: { report: TrainingTopologyReport; t: Translate; onApply: (c: TrainingTopologyCandidate) => void }) {
+  const top = report.ranked.slice(0, 12);
+  const best = report.ranked[0];
+  const topo = (c: TrainingTopologyCandidate) => `TP${c.tp}/CP${c.cp}/PP${c.pp}/EP${c.ep}/DP${c.dp}`;
+  return (
+    <div id="workload-train-topology" className="card" style={{ background: 'var(--surface-2)', marginTop: 12, scrollMarginTop: 72 }}>
+      <div className="row wrap" style={{ gap: 8 }}>
+        <h4 style={{ margin: 0 }}>{t('workload.trainSweep.title')}</h4>
+        <span className="badge src-estimate">{t('workload.trainSweep.badge')}</span>
+        <span className="badge">{report.accelerator} · {t('workload.pareto.gpus', { n: report.allocatedGpus })}</span>
+      </div>
+      <p className="caption">{t('workload.trainSweep.coverage', { enumerated: fmtInt(report.enumerated), ranked: fmtInt(report.ranked.length), rejected: fmtInt(report.rejected), spread: fmt2(report.spread) })}</p>
+      {best && !best.selected && best.speedupVsSelected != null && (
+        <p className="caption"><StatusIcon severity="info" /> {t('workload.trainSweep.best', { topo: topo(best), pct: fmtPct(best.speedupVsSelected - 1, 1) })}</p>
+      )}
+      <p className="caption"><StatusIcon severity="warning" /> {t('workload.trainSweep.noMemory')}</p>
+      <DataTable
+        maxHeight={320}
+        columns={[
+          { key: 't', header: t('workload.curve.col.topology'), render: (c: TrainingTopologyCandidate) => <span>{topo(c)}{c.selected ? ` · ${t('workload.pareto.selected')}` : ''}{c.extrapolated || c.crossesScaleUp ? ' · ⚠' : ''}{c.unevenStages ? ' · ≈' : ''}</span> },
+          { key: 'd', header: t('workload.res.ttt'), num: true, render: (c) => `${fmt1(c.timeToTrainDays!)} ${t('workload.u.days')}` },
+          { key: 's', header: t('workload.res.step'), num: true, render: (c) => `${fmt2(c.stepTimeS!)} s` },
+          { key: 'm', header: 'MFU', num: true, render: (c) => fmtPct(c.mfu, 1) },
+          { key: 'b', header: t('workload.trainSweep.bubble'), num: true, render: (c) => fmtPct(c.pipelineBubble ?? 0, 1) },
+          { key: 'g', header: t('workload.trainSweep.binding'), render: (c) => `${(c.bindingGroup ?? '–').toUpperCase()}${c.strandedGpus ? ` · ${t('workload.trainSweep.stranded', { n: c.strandedGpus })}` : ''}` },
+          { key: 'a', header: t('workload.pareto.adopt'), render: (c) => (c.selected ? <span className="hint">{t('workload.pareto.current')}</span> : <button className="btn sm" onClick={() => onApply(c)}>{t('workload.pareto.apply')}</button>) },
+        ]}
+        rows={top}
+        rowKey={(c) => c.id}
+      />
+      {report.ranked.length > top.length && <p className="caption">{t('workload.trainSweep.more', { n: report.ranked.length - top.length })}</p>}
+      <p className="caption" style={{ marginBottom: 0 }}>{t('workload.trainSweep.caveat')}</p>
+    </div>
+  );
+}
+
 export function WorkloadPanel() {
   const project = useApp((s) => s.project);
   const analysis = useApp((s) => s.analysis);
@@ -326,6 +363,8 @@ export function WorkloadPanel() {
   const [shareWant, setShareWant] = useState(0.5);
   const [paretoReport, setParetoReport] = useState<InferenceWorkloadParetoReport>();
   const [paretoLoading, setParetoLoading] = useState(false);
+  const [trainReport, setTrainReport] = useState<TrainingTopologyReport>();
+  const [trainLoading, setTrainLoading] = useState(false);
   const [paretoError, setParetoError] = useState('');
   const wl = project.workloads.find((w) => w.id === selId) ?? project.workloads[0];
   const wa = analysis?.workloads.find((w) => w.workloadId === wl?.id);
@@ -938,6 +977,21 @@ export function WorkloadPanel() {
               <button className="btn primary sm" disabled={paretoLoading} onClick={runPareto}><Icon name="workload" size={13} />{t(paretoLoading ? 'workload.pareto.running' : 'workload.pareto.run')}</button>
               <button className="btn sm" onClick={() => document.getElementById('inferencex-calibration')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}>{t('workload.res.openInferenceX')}</button>
             </>}
+            {tr && wl.kind !== 'llm-inference' && <>
+              <span className="grow" />
+              <button className="btn primary sm" disabled={trainLoading} onClick={() => {
+                if (trainLoading) return;
+                setTrainLoading(true);
+                // let the loading state paint before the synchronous sweep (≈ 0.4 ms per candidate, tens to hundreds of candidates)
+                setTimeout(() => {
+                  try {
+                    const report = analyzeTrainingWorkloadTopologies(project, wl);
+                    setTrainReport(report);
+                    if (report) requestAnimationFrame(() => document.getElementById('workload-train-topology')?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
+                  } finally { setTrainLoading(false); }
+                }, 0);
+              }}><Icon name="workload" size={13} />{t(trainLoading ? 'workload.trainSweep.running' : 'workload.trainSweep.run')}</button>
+            </>}
           </h3>
           {paretoError && <p className="caption"><StatusIcon severity="warning" /> {t('workload.pareto.error', { error: paretoError })}</p>}
           {inf && Number(wa.details?.topologyOutsideScaleUp ?? 0) > 0 && (
@@ -997,6 +1051,19 @@ export function WorkloadPanel() {
             </div>
           )}
           {inf && <InferenceThroughputCharts inf={inf} wa={wa} t={t} />}
+          {tr && trainReport && trainReport.workloadId === wl.id && (
+            <TrainingTopologyCard
+              report={trainReport}
+              t={t}
+              onApply={(c) => {
+                const patch = trainingCandidatePatch(trainReport, c);
+                const changes = workloadPatchChanges(project.workloads, patch);
+                if (!changes.length) { notify(t('workload.pareto.applyNoop'), 'info'); return; }
+                if (!update((d) => { d.workloads = applyWorkloadPatch(project.workloads, patch).map((w) => structuredClone(w)); })) return;
+                notify(t('workload.trainSweep.applied', { changes: changes.map((x) => `${x.field} ${x.from}→${x.to}`).join(', ') }), 'ok');
+              }}
+            />
+          )}
           {inf && paretoReport && (
             <InferenceWorkloadParetoCard
               report={paretoReport}
