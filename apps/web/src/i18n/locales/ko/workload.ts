@@ -527,6 +527,16 @@ const workload: Record<string, string> = {
   'workload.pareto.caveat': 'AIDC의 연산·HBM·KV cache·통신 해석 모델을 이용한 민감도 분석입니다. 보정값은 요청과 토폴로지가 정확히 일치하는 후보에만 적용하며 다른 sweep 후보로 자동 전이하지 않습니다. 최종 후보는 조건이 맞는 InferenceX 실행 또는 자체 serving benchmark로 검증해야 합니다.',
   'workload.pareto.unavailable': '배치된 GPU 플랫폼과 한 개 이상의 할당 GPU가 필요합니다.',
   'workload.pareto.error': 'Workload 분석 실패: {error}',
+  'workload.res.applyShare': '이만큼 할당',
+  'workload.res.applyShareTitle': '목표에 필요한 GPU 수에 맞춰 이 워크로드의 GPU 비중을 올립니다. 유휴 GPU를 먼저 쓰고 부족분은 다른 워크로드에서 비례 회수하며, 각 워크로드는 최소 한 개의 모델 병렬 그룹을 유지합니다.',
+  'workload.res.appliedShare': '비중을 {share}로 올렸습니다 — 목표에 필요한 GPU {gpus}개를 확보합니다',
+  'workload.pareto.adopt': '적용',
+  'workload.pareto.apply': '적용',
+  'workload.pareto.current': '현재 사용 중',
+  'workload.pareto.applyTitle': '이 서빙 방식과 TP/PP/EP/CP를 블루프린트에 씁니다. DP는 자동으로 되돌려 이 sweep과 동일하게 엔진이 배치된 풀을 채우도록 하며, TPOT SLO는 바꾸지 않습니다.',
+  'workload.pareto.applied': '토폴로지를 적용했습니다 — {changes}',
+  'workload.pareto.applyNoop': '이미 현재 설정과 같은 토폴로지입니다.',
+  'workload.pareto.applyBasis': '이 차트의 용량은 배치된 풀을 {rps} req/s로 포화시킨 값이며, 설정한 {configured} req/s가 달성하는 값이 아닙니다. 지점을 적용하면 토폴로지만 바뀝니다.',
   "workload.preset.epSet": "MoE 프리셋: 전문가 병렬화를 EP{ep}로 설정했습니다 ({name} 템플릿) — EP 1이면 all-to-all 트래픽이 네트워크에 실리지 않습니다.",
 };
 

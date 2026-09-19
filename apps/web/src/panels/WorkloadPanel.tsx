@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import {
   acceleratorPeakSource, analyzeInferenceWorkloadPareto, applyModelPreset, BENCHMARKS, calibrateFromBenchmark, calibrationRecord, catalogItems, REF_POD_TEMPLATE, effectiveShare, fitInferenceXRegression, INFERENCEX_MODELS,
   fillRemainder, findBenchmark, findCatalogItem, findModelPreset, INFERENCE_HBM_UTILIZATION, inferenceMemoryEstimate, inferenceParallelismFor, inferencePromptTokens, inferenceReplicaGpus, inferenceXModelName, inferenceXPerformanceCurves, inferenceXPredictionBenchmark, MFU_DEFAULT, MODEL_PRESETS, NODE_SPECS, normalizeShares, peakFlopsFor, podSizing, predictInferenceXPerformance, rankInferenceXBenchmarks, rankInferenceXCacheBenchmarks,
-  presetModifiedFields, scaleWarning, shareState, takeShareDetailed,
+  applyWorkloadPatch, paretoPointPatch, presetModifiedFields, scaleWarning, shareState, takeShareDetailed, workloadPatchChanges,
   type BenchmarkRow, type CalibrationPrecision, type CalibrationWarning, type CatalogItem, type SizingSuggestion, type UserMeasurement,
   type InferenceMemoryEstimate, type InferenceParallelism, type InferenceWorkloadParetoPoint, type InferenceWorkloadParetoReport, type InferenceXCacheBenchmark, type InferenceXHardwarePrediction, type InferenceXPerformanceCurvePoint, type InferenceXPerformanceCurveReport, type InferenceXPredictionReport, type WorkloadAnalysis, type WorkloadBlueprint, type WorkloadKind,
 } from '@aidc/core';
@@ -197,7 +197,12 @@ function InferenceThroughputCharts({ inf, wa, t }: {
   );
 }
 
-function InferenceWorkloadParetoCard({ report, t }: { report: InferenceWorkloadParetoReport; t: Translate }) {
+function InferenceWorkloadParetoCard({ report, t, onApply }: {
+  report: InferenceWorkloadParetoReport;
+  t: Translate;
+  /** Adopt a swept point. The card stays presentational; the panel owns the store write. */
+  onApply?: (point: InferenceWorkloadParetoPoint) => void;
+}) {
   const frontier = report.series.flatMap((series) => series.frontier)
     .sort((a, b) => a.interactivityTokPerSecPerUser - b.interactivityTokPerSecPerUser);
   const targetCoverage = frontier.find((point) => point.regression)?.regression;
@@ -276,6 +281,7 @@ function InferenceWorkloadParetoCard({ report, t }: { report: InferenceWorkloadP
         showPoints
       />
       <p className="caption" style={{ margin: '8px 0 0' }}><StatusIcon severity="info" /> {t('workload.pareto.reading')}</p>
+      {onApply && <p className="caption" style={{ margin: '3px 0 0' }}>{t('workload.pareto.applyBasis', { rps: fmtInt(frontier[0]?.poolFillRequestsPerSec ?? 0), configured: fmtInt(frontier[0]?.configuredRequestsPerSec ?? 0) })}</p>}
       <details style={{ marginTop: 10 }}>
         <summary className="secondary" style={{ cursor: 'pointer' }}>{t('workload.pareto.points', { n: frontier.length })}</summary>
         <DataTable
@@ -288,6 +294,13 @@ function InferenceWorkloadParetoCard({ report, t }: { report: InferenceWorkloadP
             { key: 't', header: t('workload.curve.col.topology'), render: topology },
             { key: 'g', header: t('workload.pareto.placement'), render: (point) => `${point.usedGpus} / ${point.allocatedGpus} GPU` },
             { key: 's', header: t('workload.pareto.status'), render: (point) => <span className={`badge ${point.meetsCurrentSlo && !point.networkLimited ? 'src-public-spec' : 'src-estimate'}`}>{t(statusKey(point))}</span> },
+            ...(onApply ? [{
+              key: 'a',
+              header: t('workload.pareto.adopt'),
+              render: (point: InferenceWorkloadParetoPoint) => (point.selectedTopology
+                ? <span className="hint">{t('workload.pareto.current')}</span>
+                : <button className="btn sm" title={t('workload.pareto.applyTitle')} onClick={() => onApply(point)}>{t('workload.pareto.apply')}</button>),
+            }] : []),
           ]}
           rows={frontier}
           rowKey={(point) => point.id}
@@ -938,7 +951,28 @@ export function WorkloadPanel() {
             {wa.timeToTrainDays != null && <Stat label={t('workload.res.ttt')} value={days(wa.timeToTrainDays)} delta={<span><Term id="goodput">goodput</Term> {fmtPct(wa.goodput)}</span>} />}
             {wa.tokensPerSec != null && <Stat label={<Term id="tokens-per-sec">{t('workload.res.tput')}</Term>} value={`${fmtInt(wa.tokensPerSec)} tok/s`} delta={<span><Term id="mfu">MFU</Term> {fmtPct(wa.mfu)}{wl.calibration?.mode === 'training' ? ` · ${t('workload.badge.calibrated')}` : ''}</span>} />}
             {wa.stepTimeS != null && <Stat label={t('workload.res.step')} value={`${fmt2(wa.stepTimeS)} s`} delta={`${t('workload.res.stepDelta', { pct: fmtPct((wa.commTimeS ?? 0) / Math.max(1e-9, wa.stepTimeS)) })}${analysis?.network.traffic ? t('workload.res.effComm', { pct: fmtPct(analysis.network.traffic.commEfficiencyEffective) }) : ''}`} />}
-            {wa.gpusRequired != null && <Stat label={t('workload.res.sloGpus')} value={fmtInt(wa.gpusRequired)} delta={`${t('workload.res.maxRps', { rps: fmt1(wa.maxRequestsPerSec) })}${Number(wa.details?.calibrationApplied ?? 0) === 1 ? ` · ${t('workload.badge.calibrated')}` : ''}`} />}
+            {wa.gpusRequired != null && <Stat label={t('workload.res.sloGpus')} value={fmtInt(wa.gpusRequired)} delta={
+              <span>
+                {t('workload.res.maxRps', { rps: fmt1(wa.maxRequestsPerSec) })}{Number(wa.details?.calibrationApplied ?? 0) === 1 ? ` · ${t('workload.badge.calibrated')}` : ''}
+                {wa.gpusRequired > wa.gpus && clusterGpus > 0 && (
+                  <> · <button
+                    className="btn ghost sm"
+                    title={t('workload.res.applyShareTitle')}
+                    onClick={() => {
+                      // The engine already computed how many GPUs the target needs; the only missing step was
+                      // converting it into this workload's share. Reuses the existing donor rules (idle GPUs first,
+                      // then proportionally, each donor clamped at one model-parallel group).
+                      const want = Math.min(1, Math.max(0, wa.gpusRequired! / Math.max(1, clusterGpus)));
+                      const r = takeShareDetailed(project.workloads, wl.id, want, { clusterGpus });
+                      if (!update((d) => { d.workloads = r.workloads.map((x) => structuredClone(x)); })) return;
+                      notify(r.capped
+                        ? t('workload.share.takeCapped', { share: fmtPct(r.granted, 1), want: fmtPct(want, 1) })
+                        : t('workload.res.appliedShare', { share: fmtPct(r.granted, 1), gpus: fmtInt(wa.gpusRequired!) }), r.capped ? 'info' : 'ok');
+                    }}
+                  >{t('workload.res.applyShare')}</button></>
+                )}
+              </span>
+            } />}
             {wa.totalTokensPerSec != null && <Stat label={t('workload.res.clusterTokens')} value={`${fmtInt(wa.totalTokensPerSec)} tok/s`} delta={wa.computedTokensPerSec != null && wa.computedTokensPerSec < wa.totalTokensPerSec ? t('workload.res.clusterOutputCached', { output: fmtInt(wa.outputTokensPerSec), computed: fmtInt(wa.computedTokensPerSec) }) : t('workload.res.clusterOutput', { tps: fmtInt(wa.outputTokensPerSec) })} />}
             {wa.ttftMs != null && <Stat label={t('workload.res.ttftTpot')} value={`${fmtInt(wa.ttftMs)} / ${fmtInt(wa.tpotMs)} ms`} />}
             {inf && wa.details && (inf.disaggregated ? (
@@ -963,7 +997,21 @@ export function WorkloadPanel() {
             </div>
           )}
           {inf && <InferenceThroughputCharts inf={inf} wa={wa} t={t} />}
-          {inf && paretoReport && <InferenceWorkloadParetoCard report={paretoReport} t={t} />}
+          {inf && paretoReport && (
+            <InferenceWorkloadParetoCard
+              report={paretoReport}
+              t={t}
+              onApply={(point) => {
+                const patch = paretoPointPatch(paretoReport, point);
+                const changes = workloadPatchChanges(project.workloads, patch);
+                if (!changes.length) { notify(t('workload.pareto.applyNoop'), 'info'); return; }
+                // structuredClone mirrors the share editors above: the patch returns plain objects, so nothing
+                // from the immer draft leaks back into the store.
+                if (!update((d) => { d.workloads = applyWorkloadPatch(project.workloads, patch).map((w) => structuredClone(w)); })) return;
+                notify(t('workload.pareto.applied', { changes: changes.map((c) => `${c.field} ${c.from}→${c.to}`).join(', ') }), 'ok');
+              }}
+            />
+          )}
           {wa.powerTrace.length > 1 && (
             <div style={{ marginTop: 12 }}>
               <LineChart

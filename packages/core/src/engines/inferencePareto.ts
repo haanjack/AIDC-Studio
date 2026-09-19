@@ -6,7 +6,8 @@ import { buildContext } from './context.ts';
 import { analyzeNetworkCtx } from './network.ts';
 import { analyzePowerCtx } from './power.ts';
 import { analyzeTraffic } from './traffic.ts';
-import { simulateInference, workloadEnv } from './workload.ts';
+import { analysedBlueprint, simulateInference, workloadEnv } from './workload.ts';
+import type { InferenceTopologyPatch } from '../workload/apply.ts';
 
 export interface InferenceWorkloadParetoPoint {
   id: string;
@@ -16,6 +17,12 @@ export interface InferenceWorkloadParetoPoint {
   lowerOutputCapacityTokensPerSec: number;
   upperOutputCapacityTokensPerSec: number;
   analyticalOutputCapacityTokensPerSec: number;
+  /** the blueprint's own offered rate — the capacity above is a pool capacity, not what this rate achieves */
+  configuredRequestsPerSec: number;
+  /** saturating rate the sweep ran at to fill the placed pool (an engine input, never a demand claim) */
+  poolFillRequestsPerSec: number;
+  /** TPOT SLO this candidate was evaluated under — the target, not the achieved `tpotMs` */
+  sweptTpotSloMs: number;
   maxRequestsPerSec: number;
   ttftMs: number;
   tpotMs: number;
@@ -146,14 +153,22 @@ export function analyzeInferenceWorkloadPareto(project: Project, workload: Workl
   const rack = baseEnv.gpuRack;
   const compute = rack?.compute;
   if (!rack || !compute) return undefined;
-  const allocatedGpus = Math.floor(Math.max(0, Math.min(1, workload.gpuShare)) * baseEnv.clusterGpus);
+  // Size the pool from the share the rest of the pipeline analyses with — engines/index.ts passes the same
+  // analysedBlueprint to the traffic engine. With Σ gpuShare > 1 the stored share is scaled down, so sweeping the
+  // raw share made this card contradict the simulation result printed directly above it.
+  const analysed = analysedBlueprint(project.workloads, workload);
+  const allocatedGpus = Math.floor(Math.max(0, Math.min(1, analysed.gpuShare)) * baseEnv.clusterGpus);
   if (allocatedGpus < 1) return undefined;
 
-  const inf = workload.inference;
+  const inf = analysed.inference!;
   const targetInteractivity = 1000 / Math.max(1, inf.tpotSloMs);
-  const interactivityTargets = [...new Set([0.25, 0.5, 1, 2, 4]
-    .map((factor) => Math.max(0.5, Math.min(1000, targetInteractivity * factor))))]
-    .sort((a, b) => a - b);
+  // Sweep the SLO in TPOT space rather than interactivity space: 1000 / (1000 / tpot) does not round-trip for every
+  // value (30 ms → 29.999999999999996) and inferenceCalibrationSignature (workload/inference.ts) pins tpotSloMs by
+  // exact equality, so a round-tripped SLO silently dropped the user's own calibration on their own configuration.
+  const sloTargets = [...new Map([0.25, 0.5, 1, 2, 4]
+    .map((factor) => Math.min(2000, Math.max(1, inf.tpotSloMs / factor)))
+    .map((tpotSloMs) => [tpotSloMs, { tpotSloMs, interactivity: 1000 / tpotSloMs }] as const)).values()]
+    .sort((a, b) => a.interactivity - b.interactivity);
   const common = inferenceParallelismFor(inf, 'aggregated');
   const configuredPrefill = inferenceParallelismFor(inf, 'prefill');
   const configuredDecode = inferenceParallelismFor(inf, 'decode');
@@ -161,22 +176,23 @@ export function analyzeInferenceWorkloadPareto(project: Project, workload: Workl
   const prefill = topologyCandidates(workload, 'prefill', configuredPrefill, allocatedGpus, compute.gpuMemoryGB, compute.scaleUp.domainSize);
   const decode = topologyCandidates(workload, 'decode', configuredDecode, allocatedGpus, compute.gpuMemoryGB, compute.scaleUp.domainSize);
 
+  const poolFillRequestsPerSec = Math.max(inf.requestsPerSec, 1_000_000);
   const run = (
     servingMode: 'aggregated' | 'disaggregated',
     p: InferenceParallelism,
     d: InferenceParallelism,
-    interactivity: number,
+    target: { tpotSloMs: number; interactivity: number },
     index: number,
   ): { analysis: WorkloadAnalysis; point?: InferenceWorkloadParetoPoint } => {
     const candidate: WorkloadBlueprint = {
-      ...workload,
+      ...analysed,
       model: { ...workload.model, moe: workload.model.moe ? { ...workload.model.moe } : undefined, mla: workload.model.mla ? { ...workload.model.mla } : undefined },
       inference: {
         ...inf,
         // A high offered rate lets the engine fill the placed pool. Network capacity is still derived by dividing
         // offered rate by calculated utilisation, so this does not claim that the demand is achieved.
-        requestsPerSec: Math.max(inf.requestsPerSec, 1_000_000),
-        tpotSloMs: 1000 / interactivity,
+        requestsPerSec: poolFillRequestsPerSec,
+        tpotSloMs: target.tpotSloMs,
         disaggregated: servingMode === 'disaggregated',
         parallelism: { ...(servingMode === 'aggregated' ? d : common), dp: undefined },
         prefillParallelism: { ...p, dp: undefined },
@@ -218,7 +234,7 @@ export function analyzeInferenceWorkloadPareto(project: Project, workload: Workl
     const selectedTopology = servingMode === (inf.disaggregated ? 'disaggregated' : 'aggregated')
       && sameTopology(p, configuredPrefill)
       && sameTopology(d, servingMode === 'aggregated' ? common : configuredDecode)
-      && Math.abs(interactivity - targetInteractivity) < 1e-9;
+      && target.tpotSloMs === inf.tpotSloMs;
     return {
       analysis,
       point: {
@@ -243,6 +259,9 @@ export function analyzeInferenceWorkloadPareto(project: Project, workload: Workl
         lowerOutputCapacityTokensPerSec: lowerCapacity,
         upperOutputCapacityTokensPerSec: upperCapacity,
         analyticalOutputCapacityTokensPerSec: analyticalCapacity,
+        configuredRequestsPerSec: inf.requestsPerSec,
+        poolFillRequestsPerSec,
+        sweptTpotSloMs: target.tpotSloMs,
       },
     };
   };
@@ -251,9 +270,9 @@ export function analyzeInferenceWorkloadPareto(project: Project, workload: Workl
   let sequence = 0;
   const aggregatedPoints: InferenceWorkloadParetoPoint[] = [];
   let aggregatedEvaluated = 0;
-  for (const topology of aggregated) for (const interactivity of interactivityTargets) {
+  for (const topology of aggregated) for (const target of sloTargets) {
     aggregatedEvaluated++;
-    const result = run('aggregated', topology, topology, interactivity, sequence++);
+    const result = run('aggregated', topology, topology, target, sequence++);
     if (result.point) aggregatedPoints.push(result.point);
   }
   series.push({
@@ -265,9 +284,9 @@ export function analyzeInferenceWorkloadPareto(project: Project, workload: Workl
   let disaggregatedEvaluated = 0;
   for (const p of prefill) for (const d of decode) {
     if (inferenceReplicaGpus(p) + inferenceReplicaGpus(d) > allocatedGpus) continue;
-    for (const interactivity of interactivityTargets) {
+    for (const target of sloTargets) {
       disaggregatedEvaluated++;
-      const result = run('disaggregated', p, d, interactivity, sequence++);
+      const result = run('disaggregated', p, d, target, sequence++);
       if (result.point) disaggregatedPoints.push(result.point);
     }
   }
@@ -301,5 +320,38 @@ export function analyzeInferenceWorkloadPareto(project: Project, workload: Workl
       hardwareHoldoutMedianError: regressionModel.hardwareHoldoutMedianError,
       hardwareHoldoutP90Error: regressionModel.hardwareHoldoutP90Error,
     } : undefined,
+  };
+}
+
+/**
+ * The patch that adopts a swept point, so a frontier row can be applied with one click instead of transcribed into
+ * up to eleven fields across two stage cards.
+ *
+ * DP is deliberately absent. Every candidate was evaluated with DP unset so the engine fills the placed pool, so the
+ * patch clears a pinned DP rather than writing back the replica count the report displayed: writing it would pin a
+ * pool the sweep never assumed, and leaving an existing one in place would silently diverge from the chosen point.
+ * The TPOT SLO is opt-in for the same reason it is shown separately — it restates a commitment, it is not a topology.
+ */
+export function paretoPointPatch(
+  report: InferenceWorkloadParetoReport,
+  point: InferenceWorkloadParetoPoint,
+  opts: { applySlo?: boolean } = {},
+): InferenceTopologyPatch {
+  const disaggregated = point.servingMode === 'disaggregated';
+  return {
+    kind: 'inference-topology',
+    workloadId: report.workloadId,
+    provenance: {
+      source: 'pareto-sweep',
+      // An exact calibration is measured evidence; a regression-informed point is derived from measurements; the
+      // bare analytical model is an estimate. The apply button is badged with this, not with the chart's headline.
+      evidence: point.calibrated ? 'public-spec' : point.regression ? 'derived' : 'estimate',
+      basis: `${report.accelerator} · ${report.allocatedGpus} GPU · ${point.servingMode}`,
+    },
+    disaggregated,
+    // For aggregated serving the sweep evaluates one topology as both stages, and the candidate installs it as
+    // `inference.parallelism` — so the decode slot carries it.
+    ...(disaggregated ? { prefill: { ...point.prefill }, decode: { ...point.decode } } : { aggregated: { ...point.decode } }),
+    ...(opts.applySlo ? { tpotSloMs: point.sweptTpotSloMs } : {}),
   };
 }

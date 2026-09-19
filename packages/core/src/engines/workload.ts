@@ -392,13 +392,22 @@ export function simulateInference(w: WorkloadBlueprint, env: WorkloadEnv): Workl
     tpotAct = tpot(bAct);
     note(`목표 수요 역산(배치 풀 제한 전): prefill DP${prefillInstances} × ${prefillGpus} GPU, decode DP${decodeInstances} × ${decodeGpus} GPU.`, `Target-demand sizing before the placed-pool limit: prefill DP${prefillInstances} × ${prefillGpus} GPUs and decode DP${decodeInstances} × ${decodeGpus} GPUs.`);
   } else {
-    let n = Math.max(1, Math.ceil(decodeDemand / decodeRate));
-    let p = 0;
-    for (let guard = 0; guard < 200000; guard++, n++) {
-      p = (inf.requestsPerSec / n) * prompt.uncached / prefillRate;
-      if (p >= 0.6) continue;
-      if (decodeDemand / n <= decodeRate * (1 - p) * 0.85) break;
-    }
+    // Closed-form instance count. This used to be an incremental search that gave up at a 200,000-iteration guard,
+    // so a high offered rate exited on the loop constant instead of on the model: the instance count — and the pool
+    // capacity that divides by it — became a function of how many iterations were allowed rather than of the
+    // hardware, and the reported capacity scaled with whatever request rate happened to be configured.
+    // Both gates are monotone in n, so the answer is the largest of their thresholds:
+    //   prefill share   p(n) = A / n < 0.6,   A = rps · uncached / prefillRate
+    //   decode headroom decodeDemand / n ≤ decodeRate · (1 − p(n)) · 0.85
+    //                 ⇒ n ≥ decodeDemand / (0.85 · decodeRate) + A
+    // Where the old search converged it returned exactly this smallest n, so converged cases are unchanged.
+    const prefillLoad = (inf.requestsPerSec * prompt.uncached) / Math.max(1e-9, prefillRate);
+    const nDecodeOnly = Math.max(1, Math.ceil(decodeDemand / Math.max(1e-9, decodeRate)));
+    const nPrefillShare = Math.floor(prefillLoad / 0.6) + 1; // strict: p < 0.6
+    const nDecodeHeadroom = Math.ceil(decodeDemand / Math.max(1e-9, 0.85 * decodeRate) + prefillLoad);
+    const solved = Math.max(nDecodeOnly, nPrefillShare, nDecodeHeadroom);
+    const n = Number.isFinite(solved) ? solved : nDecodeOnly;
+    const p = prefillLoad / n;
     aggregatedInstances = n;
     ttft = (service / Math.max(0.05, 1 - p)) * 1.3 + kvTransfer;
     tpotAct = tpot(bStar) / Math.max(0.05, 1 - p);

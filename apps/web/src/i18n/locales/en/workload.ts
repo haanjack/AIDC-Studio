@@ -528,6 +528,16 @@ const workload: Record<string, string> = {
   'workload.pareto.caveat': 'This is a sensitivity analysis from the AIDC analytical compute, HBM, KV-cache and communication model. A calibration applies only to the exact matching request and topology; it is not silently transferred across swept candidates. Validate shortlisted points with a matching InferenceX run or your own serving benchmark.',
   'workload.pareto.unavailable': 'A placed GPU platform and at least one allocated GPU are required.',
   'workload.pareto.error': 'Workload analysis failed: {error}',
+  'workload.res.applyShare': 'Allocate this',
+  'workload.res.applyShareTitle': 'Raise this workload’s GPU share to the number the target needs, taking idle GPUs first and then proportionally from the other workloads (each keeps at least one model-parallel group).',
+  'workload.res.appliedShare': 'Share raised to {share} — enough for the {gpus} GPUs the target needs',
+  'workload.pareto.adopt': 'Adopt',
+  'workload.pareto.apply': 'Apply',
+  'workload.pareto.current': 'in use',
+  'workload.pareto.applyTitle': 'Write this serving mode and its TP/PP/EP/CP into the blueprint. DP returns to automatic so the engine fills the placed pool exactly as this sweep did; the TPOT SLO is left unchanged.',
+  'workload.pareto.applied': 'Topology applied — {changes}',
+  'workload.pareto.applyNoop': 'That point is already the configured topology.',
+  'workload.pareto.applyBasis': 'Capacity on this chart is the placed pool saturated at {rps} req/s, not what the configured {configured} req/s achieves. Applying a point changes the topology only.',
   "workload.preset.epSet": "MoE preset: expert parallelism set to EP{ep} (the {name} template) — EP 1 would put no all-to-all traffic on the network.",
 };
 

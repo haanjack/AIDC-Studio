@@ -16,8 +16,10 @@ import type { CoolingPlacementOptions, Hall, Issue, PowerRoom, Project, ProjectA
 import { coolingPlacementFor, regenerateCoolingReport } from './coolingPlacement.ts';
 import { applyHallLayout, calibrateLayout, growHallToFit, layoutOptionsFromProject, notchKeepouts } from './fit.ts';
 import { CORRIDOR_DEFAULTS } from './generate.ts';
+import { inferenceParallelismFor, normalizeInferenceParallelism } from '../workload/inference.ts';
+import { normalizeShares } from '../workload/shares.ts';
 
-export type RemedyKind = 'cooling-units' | 'hall-budget' | 'budget-utility' | 'utility-feeds' | 'regenerate-hall' | 'tcs-supply' | 'supply-air' | 'ups-auto' | 'single-mode' | 'shift-hall' | 'reshape-hall' | 'fan-wall';
+export type RemedyKind = 'cooling-units' | 'hall-budget' | 'budget-utility' | 'utility-feeds' | 'regenerate-hall' | 'tcs-supply' | 'supply-air' | 'ups-auto' | 'single-mode' | 'shift-hall' | 'reshape-hall' | 'fan-wall' | 'workload-share' | 'workload-topology';
 
 /** Why an issue has no automatic remedy (the UI shows `autosize.noFix.<reason>`). */
 export type NoRemedyReason = 'geometry' | 'design-choice' | 'site' | 'schedule' | 'workload' | 'manual-hall' | 'manual';
@@ -42,6 +44,8 @@ const roundUp = (v: number, step: number) => Math.round(Math.ceil(v / step - 1e-
 export const SIZING_ISSUE_RE = /^(cooling-(cdu-(none|under|redundancy)|crah-(under|redundancy|none)|airflow|liquid-budget|air-budget)|layout-(crah-count|crah-short|cdu-gallery-short|budget-limited)|network-(unplaced|unconnected|cluster-core-unplaced)|power-(hall-budget|ups-under|ups-block-headroom|rpp-overload|utility-(total|firm)))/;
 const COOLING_UNIT_RE = /^(cooling-(cdu-(none|under|redundancy)|crah-(under|redundancy|none)|airflow)|layout-crah-count)-/;
 const BUDGET_RE = /^(power-hall-budget(-hi)?|cooling-(liquid|air)-budget|layout-budget-limited)-/;
+/** Inference EP issues whose fix is computable from the blueprint alone (validate.ts `workload-inference-{dense-ep,ep-experts}-<id>-<stage>`). */
+const INFERENCE_EP_RE = /^workload-inference-(dense-ep|ep-experts)-(.+)-(aggregated|prefill|decode)$/;
 
 const hallOfPod = (project: Project, podId: string) => project.equipment.find((e) => e.podId === podId)?.hallId;
 
@@ -181,6 +185,27 @@ export function issueRemedy(project: Project, analysis: ProjectAnalysis, issue: 
   }
   if (id.startsWith('network-unreachable-') && !project.network.cabling.preferSingleMode && singleModeReaches(project, analysis, id)) {
     return { issueId: id, kind: 'single-mode', safe: false, key: 'single-mode', params: {} };
+  }
+  // Workload remedies. Every one is safe:false AND its kind is absent from PRIORITY, so "Fix all" can never apply
+  // one: parallelism and GPU shares are design decisions, not capacities a bulk fix may sweep up. Only issues whose
+  // fix is computable from the blueprint itself are offered — `workload-inference-memory-*` needs the placed
+  // dominant-platform rule, which already exists in the engine, the validator and the panel, and re-deriving it
+  // here would add a fourth copy that can drift.
+  if (id === 'workload-share-over') {
+    const total = project.workloads.reduce((sum, w) => sum + (Number.isFinite(w.gpuShare) ? w.gpuShare : 0), 0);
+    if (!(total > 1 + 1e-9)) return undefined;
+    return { issueId: id, kind: 'workload-share', safe: false, key: 'workload-share', params: { total: Math.round(total * 100) } };
+  }
+  const epIssue = INFERENCE_EP_RE.exec(id);
+  if (epIssue) {
+    const [, rule, workloadId, stage] = epIssue;
+    const w = project.workloads.find((x) => x.id === workloadId);
+    if (!w?.inference) return undefined;
+    const current = inferenceParallelismFor(w.inference, stage as 'aggregated' | 'prefill' | 'decode');
+    // dense models shard no experts (EP 1); an MoE EP above the routed-expert count is clamped to it
+    const to = rule === 'dense-ep' ? 1 : Math.max(1, Math.min(current.ep, w.model.moe?.experts ?? 1));
+    if (!(to < current.ep)) return undefined;
+    return { issueId: id, kind: 'workload-topology', safe: false, key: `workload-ep|${workloadId}|${stage}`, params: { name: w.name, workloadId, stage, from: current.ep, to } };
   }
   return undefined;
 }
@@ -509,6 +534,23 @@ export function applyRemedy(project: Project, remedy: IssueRemedy): Project {
       const opts: CoolingPlacementOptions = { ...coolingPlacementFor(hall), crahStrategy: 'gallery-fan-wall', crahCatalogId: String(remedy.params.fanId), crahCount: 'auto', crahWalls: rowEndWalls(orientation) };
       const rep = regenerateCoolingReport(project, hall.id, opts);
       return rep.requiresRegenerate ? project : keepBudgetsFitted(project, rep.project, hall.id);
+    }
+    case 'workload-share':
+      // The validator's own suggestion: store the proportionally scaled shares the analysis already used.
+      d.workloads = normalizeShares(d.workloads);
+      return d;
+    case 'workload-topology': {
+      const w = d.workloads.find((x) => x.id === String(remedy.params.workloadId));
+      const inf = w?.inference;
+      if (!inf) return project;
+      const stage = String(remedy.params.stage);
+      // Resolve the stage's effective topology first: a P/D stage may inherit the common one, and the write has to
+      // be a concrete object rather than a change to something that was never stored.
+      const next = normalizeInferenceParallelism({ ...inferenceParallelismFor(inf, stage as 'aggregated' | 'prefill' | 'decode'), ep: Number(remedy.params.to) });
+      if (stage === 'prefill') inf.prefillParallelism = next;
+      else if (stage === 'decode') inf.decodeParallelism = next;
+      else inf.parallelism = next;
+      return d;
     }
   }
 }
